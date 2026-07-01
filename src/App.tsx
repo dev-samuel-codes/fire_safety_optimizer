@@ -769,7 +769,7 @@ function Icon({ name }: { name: string }) {
   const common = { fill: "none", stroke: "currentColor", strokeWidth: 1.8, strokeLinecap: "round", strokeLinejoin: "round" } as const;
   switch (name) {
     case "flame":
-      return <svg viewBox="0 0 24 24"><path fill="currentColor" d="M12.2 22c-4.4 0-7.5-3-7.5-7.1 0-2.9 1.7-5.4 4.5-7.9.3 2 .9 3.3 2.1 4.1.4-3.5 1.4-6.3 3.8-9.1 2.7 3.4 4.2 6.5 4.2 10.5 0 5.7-3.8 9.5-7.1 9.5Z" /></svg>;
+      return <svg viewBox="0 0 24 24" {...common}><path d="M3 10h18M5 10v9M9 10v9M15 10v9M19 10v9M4 21h16M12 3 3 8h18Z" /></svg>;
     case "plan":
       return <svg viewBox="0 0 24 24" {...common}><rect x="4" y="4" width="16" height="16" rx="2" /><path d="M9 4v6h6V4M9 20v-5H4M15 20v-7h5" /></svg>;
     case "folder":

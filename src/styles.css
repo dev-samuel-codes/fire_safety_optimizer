@@ -1,8 +1,23 @@
 :root {
   color-scheme: dark;
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  background: #07101b;
-  color: #eff6ff;
+  --overview-bg: #03070b;
+  --overview-ink: #f4f7fb;
+  --overview-muted: #c8ced8;
+  --overview-subtle: #8e98a8;
+  --overview-panel: rgba(5, 12, 18, 0.78);
+  --overview-panel-strong: rgba(8, 16, 24, 0.92);
+  --overview-line: rgba(152, 164, 181, 0.34);
+  --overview-line-soft: rgba(152, 164, 181, 0.18);
+  --overview-green: #76df6d;
+  --overview-green-soft: rgba(118, 223, 109, 0.34);
+  --overview-red: #ff554f;
+  --overview-blue: #82b7ff;
+  --overview-yellow: #ffd85c;
+  --overview-purple: #be84ff;
+  --overview-cyan: #48d9e6;
+  background: var(--overview-bg);
+  color: var(--overview-ink);
   line-height: 1.45;
 }
 
@@ -15,8 +30,9 @@ body {
   min-width: 1180px;
   min-height: 100vh;
   background:
-    radial-gradient(circle at 18% -10%, rgba(38, 94, 152, 0.22), transparent 34rem),
-    linear-gradient(135deg, #08111d 0%, #0a1320 48%, #06101b 100%);
+    radial-gradient(circle at 28% 0%, rgba(55, 84, 112, 0.2), transparent 28rem),
+    radial-gradient(circle at 72% 18%, rgba(22, 92, 111, 0.12), transparent 34rem),
+    linear-gradient(135deg, #010307 0%, #071017 48%, #02050a 100%);
 }
 
 button,
@@ -39,7 +55,7 @@ svg {
 .app-shell {
   position: relative;
   display: grid;
-  grid-template-rows: 78px 1fr 36px;
+  grid-template-rows: 92px 1fr 36px;
   min-height: 100vh;
   overflow: hidden;
 }
@@ -49,8 +65,9 @@ svg {
   grid-template-columns: 260px 300px 1fr auto;
   align-items: center;
   gap: 18px;
-  padding: 18px 20px 12px;
-  border-bottom: 1px solid rgba(107, 129, 153, 0.12);
+  padding: 18px 20px 14px;
+  border-bottom: 1px solid var(--overview-line-soft);
+  background: linear-gradient(180deg, rgba(0, 3, 7, 0.72), rgba(0, 3, 7, 0));
 }
 
 .brand {
@@ -64,7 +81,7 @@ svg {
   width: 48px;
   height: 48px;
   place-items: center;
-  color: #ff5149;
+  color: var(--overview-red);
 }
 
 .brand-mark svg {
@@ -83,14 +100,15 @@ svg {
 }
 
 .brand h1 {
-  font-size: 29px;
+  font-size: 36px;
+  font-weight: 900;
   letter-spacing: 0;
   line-height: 1;
 }
 
 .brand p {
-  margin-top: 4px;
-  color: #aeb9c8;
+  margin-top: 7px;
+  color: var(--overview-muted);
   font-size: 12px;
 }
 
@@ -107,9 +125,11 @@ svg {
 .recommend-panel,
 .implementation-drawer {
   border: 1px solid rgba(108, 132, 160, 0.22);
-  background: rgba(14, 25, 39, 0.74);
-  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.18);
-  backdrop-filter: blur(18px);
+  background: var(--overview-panel);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.015),
+    0 18px 50px rgba(0, 0, 0, 0.24);
+  backdrop-filter: blur(16px);
 }
 
 .project-select,
@@ -118,19 +138,19 @@ svg {
   align-items: center;
   justify-content: space-between;
   min-height: 48px;
-  border-radius: 8px;
+  border-radius: 10px;
   padding: 0 18px;
-  color: #f4f8ff;
+  color: var(--overview-ink);
 }
 
 .project-select {
-  background: rgba(7, 14, 24, 0.62);
+  background: rgba(2, 6, 11, 0.62);
 }
 
 .file-pill {
   justify-content: flex-start;
   gap: 12px;
-  color: #dce7f5;
+  color: var(--overview-muted);
 }
 
 .top-actions {
@@ -142,9 +162,10 @@ svg {
 .top-actions button {
   height: 44px;
   min-width: 82px;
-  border: 1px solid rgba(108, 132, 160, 0.22);
-  border-radius: 8px;
-  color: #e6eef8;
+  border: 1px solid var(--overview-line-soft);
+  border-radius: 10px;
+  color: var(--overview-ink);
+  background: rgba(2, 7, 12, 0.72);
 }
 
 .top-actions button.saved {
@@ -156,8 +177,9 @@ svg {
 .top-actions .export,
 .primary-small,
 .apply-button {
-  border-color: rgba(31, 115, 255, 0.62);
-  background: linear-gradient(180deg, #0d6bff, #0752c8);
+  border-color: rgba(118, 223, 109, 0.62);
+  background: linear-gradient(180deg, rgba(118, 223, 109, 0.92), rgba(55, 158, 75, 0.92));
+  color: #061108;
 }
 
 .top-actions .round {
@@ -174,6 +196,7 @@ svg {
   gap: 10px;
   min-height: 0;
   padding: 0 12px 0 0;
+  counter-reset: overview-section;
 }
 
 .sidenav {
@@ -196,8 +219,9 @@ svg {
 }
 
 .sidenav button.active {
-  color: #d9ecff;
-  background: linear-gradient(180deg, rgba(14, 92, 194, 0.52), rgba(9, 36, 67, 0.74));
+  color: #061108;
+  background: linear-gradient(180deg, rgba(118, 223, 109, 0.96), rgba(76, 186, 91, 0.84));
+  box-shadow: 0 0 22px rgba(118, 223, 109, 0.18);
 }
 
 .left-panel,
@@ -219,8 +243,14 @@ svg {
 .panel-block,
 .analysis-panel,
 .recommend-panel {
-  border-radius: 8px;
-  padding: 16px;
+  position: relative;
+  counter-increment: overview-section;
+  border-color: var(--overview-line);
+  border-radius: 12px;
+  padding: 18px 16px 16px;
+  background:
+    radial-gradient(circle at 12% 0%, rgba(96, 142, 172, 0.12), transparent 18rem),
+    linear-gradient(135deg, rgba(6, 13, 20, 0.94), rgba(3, 9, 15, 0.82));
 }
 
 .panel-block + .panel-block,
@@ -232,19 +262,50 @@ svg {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 18px;
+  gap: 10px;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--overview-green-soft);
 }
 
 .panel-heading h2 {
-  font-size: 18px;
+  font-size: 20px;
 }
 
 .panel-heading h3,
 .section-title,
 .analysis-panel h3,
 .recommend-panel h3 {
-  font-size: 15px;
-  font-weight: 700;
+  font-size: 18px;
+  font-weight: 900;
+  color: var(--overview-green);
+}
+
+.panel-heading h2,
+.panel-heading h3,
+.recommend-panel h3 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--overview-green);
+}
+
+.panel-heading h2::before,
+.panel-heading h3::before,
+.recommend-panel h3::before,
+.tabs::before {
+  content: counter(overview-section);
+  display: inline-grid;
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--overview-green);
+  color: #061108;
+  font-size: 16px;
+  font-weight: 950;
+  line-height: 1;
 }
 
 .section-label-row {
@@ -252,7 +313,7 @@ svg {
   align-items: center;
   justify-content: space-between;
   margin-bottom: 10px;
-  color: #e7eef9;
+  color: var(--overview-ink);
   font-weight: 700;
 }
 
@@ -291,15 +352,15 @@ svg {
   width: 100%;
   min-height: 58px;
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: 10px;
   padding: 10px 12px;
-  background: rgba(10, 17, 27, 0.54);
+  background: rgba(3, 8, 13, 0.7);
   text-align: left;
 }
 
 .file-item.active {
-  border-color: rgba(43, 123, 255, 0.36);
-  background: rgba(23, 39, 59, 0.94);
+  border-color: rgba(130, 183, 255, 0.42);
+  background: rgba(12, 25, 41, 0.9);
 }
 
 .file-item strong,
@@ -326,8 +387,8 @@ svg {
   flex-shrink: 0;
   border-radius: 5px;
   padding: 3px 7px;
-  background: #126aff;
-  color: white;
+  background: var(--overview-blue);
+  color: #07101b;
   font-size: 12px;
   font-style: normal;
   font-weight: 800;
@@ -352,14 +413,14 @@ svg {
   grid-template-columns: 22px 1fr 18px;
   align-items: center;
   gap: 10px;
-  color: #c8d4e2;
+  color: var(--overview-muted);
   font-size: 14px;
 }
 
 .layer-row input {
   width: 18px;
   height: 18px;
-  accent-color: #1872ff;
+  accent-color: var(--overview-green);
 }
 
 .layer-row i {
@@ -377,9 +438,9 @@ svg {
   display: grid;
   grid-template-columns: 1fr 1fr;
   padding: 2px;
-  border: 1px solid rgba(116, 139, 166, 0.28);
-  border-radius: 8px;
-  background: rgba(4, 10, 17, 0.45);
+  border: 1px solid var(--overview-line-soft);
+  border-radius: 10px;
+  background: rgba(1, 4, 8, 0.6);
 }
 
 .segmented button {
@@ -391,8 +452,8 @@ svg {
 }
 
 .segmented button.selected {
-  background: linear-gradient(180deg, #0e57c7, #0b3978);
-  color: white;
+  background: linear-gradient(180deg, rgba(118, 223, 109, 0.92), rgba(61, 154, 75, 0.86));
+  color: #061108;
   font-weight: 800;
 }
 
@@ -402,12 +463,12 @@ svg {
   align-items: center;
   gap: 10px;
   margin-top: 16px;
-  color: #c8d4e2;
+  color: var(--overview-muted);
   font-size: 13px;
 }
 
 .range-row input {
-  accent-color: #0e67ef;
+  accent-color: var(--overview-green);
 }
 
 .canvas-panel {
@@ -423,9 +484,12 @@ svg {
   align-items: center;
   height: 64px;
   align-self: end;
-  border-radius: 8px;
+  border-radius: 12px;
   padding: 8px 10px;
-  background: linear-gradient(180deg, rgba(22, 31, 43, 0.96), rgba(12, 18, 28, 0.96));
+  border-color: var(--overview-line);
+  background:
+    radial-gradient(circle at 12% 0%, rgba(118, 223, 109, 0.08), transparent 18rem),
+    rgba(4, 10, 16, 0.92);
 }
 
 .toolbar button {
@@ -435,17 +499,17 @@ svg {
   width: 66px;
   height: 50px;
   border: 0;
-  border-radius: 6px;
+  border-radius: 8px;
   background: transparent;
-  color: #c4cfdb;
+  color: var(--overview-muted);
   font-size: 12px;
 }
 
 .toolbar button.active {
-  outline: 1px solid rgba(55, 184, 255, 0.52);
-  background: linear-gradient(180deg, rgba(28, 92, 146, 0.78), rgba(15, 43, 72, 0.9));
-  color: #ffffff;
-  box-shadow: inset 0 0 0 1px rgba(116, 221, 255, 0.14);
+  outline: 1px solid var(--overview-green-soft);
+  background: rgba(118, 223, 109, 0.13);
+  color: var(--overview-green);
+  box-shadow: inset 0 0 0 1px rgba(118, 223, 109, 0.08);
 }
 
 .floor-controls {
@@ -461,25 +525,25 @@ svg {
   gap: 10px;
   height: 38px;
   min-width: 86px;
-  border-radius: 8px;
+  border-radius: 10px;
   padding: 0 14px;
 }
 
 .drawing-card {
   position: relative;
   overflow: hidden;
-  border-radius: 8px;
+  border-radius: 12px;
   background:
-    radial-gradient(circle at 48% 38%, rgba(27, 70, 100, 0.24), transparent 36rem),
-    rgba(7, 15, 25, 0.88);
+    radial-gradient(circle at 48% 38%, rgba(64, 103, 126, 0.13), transparent 36rem),
+    rgba(2, 7, 11, 0.9);
 }
 
 .autocad-space {
-  border-color: rgba(76, 96, 117, 0.42);
+  border-color: var(--overview-line);
   background:
-    linear-gradient(90deg, rgba(21, 33, 48, 0.48) 1px, transparent 1px),
-    linear-gradient(0deg, rgba(21, 33, 48, 0.48) 1px, transparent 1px),
-    #05080d;
+    linear-gradient(90deg, rgba(73, 95, 113, 0.26) 1px, transparent 1px),
+    linear-gradient(0deg, rgba(73, 95, 113, 0.26) 1px, transparent 1px),
+    #02060a;
   background-size: 32px 32px;
   cursor: crosshair;
   touch-action: none;
@@ -507,8 +571,8 @@ svg {
   inset: 0;
   overflow: hidden;
   background:
-    radial-gradient(circle at 50% 50%, rgba(23, 79, 112, 0.14), transparent 30rem),
-    #07111d;
+    radial-gradient(circle at 50% 50%, rgba(69, 104, 128, 0.1), transparent 30rem),
+    #02060a;
 }
 
 .cad-viewer-host {
@@ -543,10 +607,10 @@ svg {
   gap: 12px;
   padding: 28px;
   background:
-    repeating-linear-gradient(90deg, rgba(41, 62, 85, 0.16) 0 1px, transparent 1px 34px),
-    repeating-linear-gradient(0deg, rgba(41, 62, 85, 0.12) 0 1px, transparent 1px 34px),
-    rgba(7, 17, 29, 0.92);
-  color: #dce9f8;
+    repeating-linear-gradient(90deg, rgba(73, 95, 113, 0.2) 0 1px, transparent 1px 34px),
+    repeating-linear-gradient(0deg, rgba(73, 95, 113, 0.16) 0 1px, transparent 1px 34px),
+    rgba(2, 6, 10, 0.94);
+  color: var(--overview-ink);
   text-align: center;
 }
 
@@ -556,7 +620,7 @@ svg {
 
 .cad-empty-state span {
   max-width: 380px;
-  color: #9fb0c3;
+  color: var(--overview-muted);
   font-size: 13px;
 }
 
@@ -565,13 +629,13 @@ svg {
   width: 76px;
   height: 76px;
   place-items: center;
-  border: 1px solid rgba(60, 154, 255, 0.38);
-  border-radius: 8px;
-  background: rgba(12, 42, 72, 0.72);
-  color: #74c7ff;
+  border: 1px solid var(--overview-green-soft);
+  border-radius: 10px;
+  background: rgba(11, 42, 20, 0.58);
+  color: var(--overview-green);
   font-size: 15px;
   font-weight: 900;
-  box-shadow: 0 0 34px rgba(23, 113, 255, 0.18);
+  box-shadow: 0 0 34px rgba(118, 223, 109, 0.14);
 }
 
 .cad-progress {
@@ -579,14 +643,14 @@ svg {
   height: 8px;
   overflow: hidden;
   border-radius: 999px;
-  background: rgba(79, 105, 134, 0.28);
+  background: rgba(152, 164, 181, 0.18);
 }
 
 .cad-progress i {
   display: block;
   height: 100%;
   border-radius: inherit;
-  background: linear-gradient(90deg, #1482ff, #43e0ff);
+  background: linear-gradient(90deg, var(--overview-green), var(--overview-cyan));
   transition: width 180ms ease;
 }
 
@@ -598,18 +662,19 @@ svg {
   display: flex;
   align-items: center;
   gap: 10px;
-  border: 1px solid rgba(98, 130, 166, 0.28);
-  border-radius: 8px;
+  border: 1px solid var(--overview-line);
+  border-radius: 10px;
   padding: 8px 10px;
-  background: rgba(8, 17, 28, 0.78);
-  color: #dce9f8;
+  background: rgba(2, 7, 12, 0.82);
+  color: var(--overview-ink);
   box-shadow: 0 12px 28px rgba(0, 0, 0, 0.24);
 }
 
 .cad-render-badge span {
   border-radius: 5px;
   padding: 3px 7px;
-  background: #0d6bff;
+  background: var(--overview-blue);
+  color: #07101b;
   font-size: 12px;
   font-weight: 900;
 }
@@ -630,10 +695,10 @@ svg {
   z-index: 1;
   pointer-events: none;
   background:
-    linear-gradient(90deg, rgba(68, 96, 126, 0.16) 1px, transparent 1px),
-    linear-gradient(0deg, rgba(68, 96, 126, 0.16) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(80, 115, 148, 0.08) 1px, transparent 1px),
-    linear-gradient(0deg, rgba(80, 115, 148, 0.08) 1px, transparent 1px);
+    linear-gradient(90deg, rgba(116, 143, 163, 0.16) 1px, transparent 1px),
+    linear-gradient(0deg, rgba(116, 143, 163, 0.16) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(116, 143, 163, 0.08) 1px, transparent 1px),
+    linear-gradient(0deg, rgba(116, 143, 163, 0.08) 1px, transparent 1px);
   background-size: 160px 160px, 160px 160px, 16px 16px, 16px 16px;
   mask-image: linear-gradient(to bottom, transparent, black 6%, black 88%, transparent);
 }
@@ -999,14 +1064,18 @@ svg {
 
 .analysis-panel,
 .recommend-panel {
-  background: rgba(13, 24, 37, 0.82);
+  background:
+    radial-gradient(circle at 12% 0%, rgba(96, 142, 172, 0.12), transparent 18rem),
+    rgba(4, 10, 16, 0.9);
 }
 
 .tabs {
   display: flex;
-  gap: 24px;
-  border-bottom: 1px solid rgba(120, 144, 171, 0.16);
-  margin-bottom: 14px;
+  align-items: center;
+  gap: 20px;
+  border-bottom: 1px solid var(--overview-green-soft);
+  margin-bottom: 16px;
+  padding-bottom: 9px;
 }
 
 .tabs button {
@@ -1014,12 +1083,12 @@ svg {
   height: 42px;
   border: 0;
   background: transparent;
-  color: #b9c5d4;
+  color: var(--overview-muted);
   font-weight: 800;
 }
 
 .tabs button.active {
-  color: white;
+  color: var(--overview-green);
 }
 
 .tabs button.active::after {
@@ -1027,9 +1096,9 @@ svg {
   position: absolute;
   left: 0;
   right: 0;
-  bottom: -1px;
-  height: 3px;
-  background: #1972ff;
+  bottom: -10px;
+  height: 2px;
+  background: var(--overview-green);
 }
 
 .tabs strong {
@@ -1039,7 +1108,7 @@ svg {
   margin-left: 6px;
   place-items: center;
   border-radius: 5px;
-  background: #e94747;
+  background: var(--overview-red);
   color: white;
   font-size: 12px;
 }
@@ -1051,17 +1120,19 @@ svg {
 }
 
 .metric-grid article {
-  border-radius: 7px;
+  border: 1px solid rgba(130, 183, 255, 0.48);
+  border-radius: 10px;
   padding: 15px;
-  background: linear-gradient(135deg, rgba(19, 67, 116, 0.9), rgba(9, 37, 69, 0.8));
+  background: rgba(6, 20, 44, 0.76);
 }
 
 .metric-grid article.success {
-  background: linear-gradient(135deg, rgba(16, 92, 77, 0.9), rgba(10, 55, 48, 0.78));
+  border-color: rgba(118, 223, 109, 0.52);
+  background: rgba(8, 35, 18, 0.72);
 }
 
 .metric-grid span {
-  color: #66d4ff;
+  color: var(--overview-blue);
   font-size: 13px;
   font-weight: 800;
 }
@@ -1123,10 +1194,10 @@ svg {
   gap: 12px;
   align-items: center;
   min-height: 90px;
-  border: 1px solid rgba(111, 132, 155, 0.14);
-  border-radius: 8px;
+  border: 1px solid var(--overview-line-soft);
+  border-radius: 10px;
   padding: 12px;
-  background: rgba(28, 40, 55, 0.78);
+  background: rgba(4, 10, 16, 0.74);
 }
 
 .conflict-card strong {
@@ -1181,36 +1252,36 @@ svg {
 
 .recommend-card {
   margin-top: 12px;
-  border: 1px solid rgba(119, 141, 164, 0.15);
-  border-radius: 8px;
+  border: 1px solid var(--overview-line-soft);
+  border-radius: 10px;
   padding: 14px;
-  background: rgba(21, 32, 47, 0.84);
+  background: rgba(4, 10, 16, 0.74);
 }
 
 .recommend-card.recommended {
-  border-color: rgba(26, 208, 126, 0.18);
-  background: linear-gradient(135deg, rgba(18, 71, 65, 0.78), rgba(24, 38, 55, 0.92));
+  border-color: rgba(118, 223, 109, 0.42);
+  background: rgba(8, 35, 18, 0.68);
 }
 
 .recommend-title {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  color: #46e3a2;
+  color: var(--overview-green);
 }
 
 .recommend-title span {
   border-radius: 5px;
   padding: 3px 7px;
-  background: rgba(54, 214, 128, 0.72);
-  color: #052117;
+  background: var(--overview-green);
+  color: #061108;
   font-size: 12px;
   font-weight: 900;
 }
 
 .recommend-card p,
 .saving small {
-  color: #c7d2e0;
+  color: var(--overview-muted);
 }
 
 .saving {
@@ -1220,7 +1291,7 @@ svg {
 }
 
 .saving b {
-  color: #49d992;
+  color: var(--overview-green);
   font-size: 22px;
 }
 
@@ -1240,9 +1311,9 @@ svg {
   align-items: center;
   gap: 10px;
   padding: 0 18px;
-  border-top: 1px solid rgba(110, 132, 155, 0.15);
-  background: rgba(8, 15, 24, 0.92);
-  color: #c8d4e3;
+  border-top: 1px solid var(--overview-line-soft);
+  background: rgba(1, 4, 8, 0.94);
+  color: var(--overview-muted);
   font-size: 13px;
 }
 
@@ -1250,8 +1321,8 @@ svg {
   width: 12px;
   height: 12px;
   border-radius: 999px;
-  background: #32d176;
-  box-shadow: 0 0 14px #32d176;
+  background: var(--overview-green);
+  box-shadow: 0 0 14px var(--overview-green);
 }
 
 .status-bar span {
@@ -1260,7 +1331,7 @@ svg {
 
 .status-bar b {
   margin-left: 18px;
-  color: white;
+  color: var(--overview-ink);
   font-size: 16px;
 }
 
@@ -1269,7 +1340,7 @@ svg {
   align-items: center;
   justify-content: flex-end;
   gap: 8px;
-  color: #dbe7f4;
+  color: var(--overview-ink);
   font-style: normal;
 }
 
