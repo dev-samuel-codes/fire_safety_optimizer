@@ -1,0 +1,162 @@
+[
+  {
+    "id": 1,
+    "name": "wall",
+    "supercategory": "building"
+  },
+  {
+    "id": 2,
+    "name": "column",
+    "supercategory": "building"
+  },
+  {
+    "id": 3,
+    "name": "door",
+    "supercategory": "building"
+  },
+  {
+    "id": 4,
+    "name": "window",
+    "supercategory": "building"
+  },
+  {
+    "id": 5,
+    "name": "stair",
+    "supercategory": "building"
+  },
+  {
+    "id": 6,
+    "name": "room",
+    "supercategory": "building"
+  },
+  {
+    "id": 7,
+    "name": "corridor",
+    "supercategory": "building"
+  },
+  {
+    "id": 8,
+    "name": "grid_axis",
+    "supercategory": "building"
+  },
+  {
+    "id": 110,
+    "name": "smoke_detector",
+    "supercategory": "fire_detect"
+  },
+  {
+    "id": 111,
+    "name": "heat_detector",
+    "supercategory": "fire_detect"
+  },
+  {
+    "id": 112,
+    "name": "detector_linear",
+    "supercategory": "fire_detect"
+  },
+  {
+    "id": 113,
+    "name": "manual_call",
+    "supercategory": "fire_detect"
+  },
+  {
+    "id": 114,
+    "name": "detection_zone",
+    "supercategory": "fire_detect"
+  },
+  {
+    "id": 210,
+    "name": "sprinkler_head",
+    "supercategory": "fire_suppress"
+  },
+  {
+    "id": 211,
+    "name": "hydrant_box",
+    "supercategory": "fire_suppress"
+  },
+  {
+    "id": 212,
+    "name": "extinguisher",
+    "supercategory": "fire_suppress"
+  },
+  {
+    "id": 213,
+    "name": "riser_alarm",
+    "supercategory": "fire_suppress"
+  },
+  {
+    "id": 214,
+    "name": "sprinkler_pipe",
+    "supercategory": "fire_suppress"
+  },
+  {
+    "id": 215,
+    "name": "hydrant_pipe",
+    "supercategory": "fire_suppress"
+  },
+  {
+    "id": 310,
+    "name": "exit_light",
+    "supercategory": "fire_evac"
+  },
+  {
+    "id": 311,
+    "name": "directional_light",
+    "supercategory": "fire_evac"
+  },
+  {
+    "id": 312,
+    "name": "escape_device",
+    "supercategory": "fire_evac"
+  },
+  {
+    "id": 313,
+    "name": "emergency_light",
+    "supercategory": "fire_evac"
+  },
+  {
+    "id": 314,
+    "name": "fire_door",
+    "supercategory": "fire_evac"
+  },
+  {
+    "id": 315,
+    "name": "evac_route",
+    "supercategory": "fire_evac"
+  },
+  {
+    "id": 316,
+    "name": "smoke_control",
+    "supercategory": "fire_evac"
+  },
+  {
+    "id": 410,
+    "name": "alarm_bell",
+    "supercategory": "fire_alarm"
+  },
+  {
+    "id": 510,
+    "name": "cable_tray",
+    "supercategory": "mep"
+  },
+  {
+    "id": 511,
+    "name": "elec_conduit",
+    "supercategory": "mep"
+  },
+  {
+    "id": 610,
+    "name": "room_label",
+    "supercategory": "annotation"
+  },
+  {
+    "id": 611,
+    "name": "dimension",
+    "supercategory": "annotation"
+  },
+  {
+    "id": 612,
+    "name": "titleblock",
+    "supercategory": "annotation"
+  }
+]

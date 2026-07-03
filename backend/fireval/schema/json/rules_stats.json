@@ -1,0 +1,43 @@
+{
+  "total": 122,
+  "by_facility": {
+    "sprinkler": 20,
+    "detector": 32,
+    "extinguisher": 16,
+    "hydrant": 25,
+    "evacuation": 29
+  },
+  "by_checkability": {
+    "plan": 73,
+    "calc": 35,
+    "section": 10,
+    "context": 4
+  },
+  "by_check_type": {
+    "radial_coverage": 9,
+    "factor": 8,
+    "clearance": 9,
+    "other": 2,
+    "spacing": 8,
+    "area_coverage": 15,
+    "walking_coverage": 9,
+    "vertical_coverage": 2,
+    "angle": 1,
+    "mount_geometry": 5,
+    "zone_area_limit": 1,
+    "applicability_threshold": 10,
+    "capacity_sizing": 6,
+    "exclusion": 2,
+    "hydraulic_sizing": 14,
+    "pipe_spec": 4,
+    "corridor_width": 10,
+    "count_sizing": 3,
+    "opening_dimension": 2,
+    "applicability_floor": 2
+  },
+  "by_severity": {
+    "critical": 35,
+    "info": 12,
+    "major": 75
+  }
+}

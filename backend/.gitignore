@@ -1,0 +1,34 @@
+# === Python ===
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+
+# === 대용량 데이터셋/입력 (git에 넣지 않음, 13GB) ===
+data/
+sample_ifc/
+uploads/
+
+# === 생성 출력물 (재생성 가능) ===
+out/
+out_*/
+*_demo_report.md
+
+# === 대용량 렌더/자산 (PDF→재생성) ===
+fireval/eval_anchor/pkg/
+fireval/eval_anchor/_serve/
+
+# === 대용량/기밀 바이너리 도면 ===
+*.dwg
+*.ifc
+*.pt
+*.zip
+
+# === 로그·임시 ===
+*.log
+*.tmp
+.DS_Store
+
+# === 유지: 소스(*.py)·문서(*.md)·라벨(eval_anchor/gt/)·스키마·requirements ===
