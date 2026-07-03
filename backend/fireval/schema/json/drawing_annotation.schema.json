@@ -1,0 +1,158 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "DrawingAnnotation",
+  "type": "object",
+  "required": [
+    "drawing_id"
+  ],
+  "properties": {
+    "drawing_id": {
+      "type": "string"
+    },
+    "source_file": {
+      "type": "string"
+    },
+    "units_scale": {
+      "type": "number"
+    },
+    "image_size": {
+      "type": "array",
+      "items": {
+        "type": "number"
+      }
+    },
+    "building_meta": {
+      "type": "object"
+    },
+    "label_provenance": {
+      "enum": [
+        "synthetic_gt",
+        "model_pred",
+        "expert",
+        "rule_engine"
+      ]
+    },
+    "objects": {
+      "type": "array",
+      "items": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "title": "ObjectLabel",
+        "type": "object",
+        "required": [
+          "category_id",
+          "category_key"
+        ],
+        "properties": {
+          "category_id": {
+            "type": "integer"
+          },
+          "category_key": {
+            "type": "string"
+          },
+          "pixel_bbox": {
+            "type": "array",
+            "items": {
+              "type": "number"
+            },
+            "minItems": 4,
+            "maxItems": 4,
+            "description": "COCO [x,y,w,h] px"
+          },
+          "segmentation": {
+            "type": "array"
+          },
+          "world_geometry": {
+            "type": "array",
+            "description": "월드좌표(m) 점/선/면"
+          },
+          "dxf_handle": {
+            "type": "string"
+          },
+          "dxf_layer": {
+            "type": "string"
+          },
+          "dxf_block": {
+            "type": "string"
+          },
+          "attributes": {
+            "type": "object"
+          },
+          "source": {
+            "enum": [
+              "synthetic_gt",
+              "model_pred",
+              "expert",
+              "rule_engine"
+            ]
+          },
+          "object_id": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "violations": {
+      "type": "array",
+      "items": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "title": "ViolationLabel",
+        "type": "object",
+        "required": [
+          "rule_id",
+          "status"
+        ],
+        "properties": {
+          "rule_id": {
+            "type": "string",
+            "pattern": "^FV-(SPK|DET|EXT|HYD|EVA)-.+$"
+          },
+          "status": {
+            "enum": [
+              "violation",
+              "compliant",
+              "not_applicable",
+              "needs_review"
+            ]
+          },
+          "description": {
+            "type": "string"
+          },
+          "evidence_geometry": {
+            "type": "array"
+          },
+          "evidence_object_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "measured_value": {},
+          "required_value": {},
+          "unit": {
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "critical",
+              "major",
+              "minor",
+              "info",
+              ""
+            ]
+          },
+          "source": {
+            "enum": [
+              "synthetic_gt",
+              "model_pred",
+              "expert",
+              "rule_engine"
+            ]
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

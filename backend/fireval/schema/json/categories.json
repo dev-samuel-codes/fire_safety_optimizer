@@ -1,0 +1,690 @@
+{
+  "groups": {
+    "building": "건축 요소(벽·기둥·문·창·계단·실·복도)",
+    "fire_detect": "화재탐지(감지기·발신기·경계구역)",
+    "fire_suppress": "소화(스프링클러·소화전·소화기·배관)",
+    "fire_evac": "피난(유도등·피난기구·방화문·동선·제연)",
+    "fire_alarm": "경보(경종·사이렌)",
+    "mep": "전기/기계(충돌검토 대상)",
+    "annotation": "도면 주기(실명·치수·표제란)"
+  },
+  "geometry_types": [
+    "point",
+    "arc",
+    "polyline",
+    "polygon",
+    "text",
+    "dimension"
+  ],
+  "recognize_sources": [
+    "synthetic",
+    "public_dataset",
+    "real_drawing",
+    "expert"
+  ],
+  "categories": [
+    {
+      "id": 1,
+      "key": "wall",
+      "name_ko": "벽체",
+      "group": "building",
+      "geometry": "polygon",
+      "dxf_layers": [
+        "벽",
+        "wall",
+        "a-벽",
+        "구조",
+        "외벽",
+        "내벽"
+      ],
+      "dxf_block": "",
+      "symbol_desc": "이중선 또는 해치 채움",
+      "facility": "",
+      "recognize_via": [
+        "synthetic",
+        "public_dataset",
+        "real_drawing"
+      ],
+      "notes": ""
+    },
+    {
+      "id": 2,
+      "key": "column",
+      "name_ko": "기둥",
+      "group": "building",
+      "geometry": "polygon",
+      "dxf_layers": [
+        "기둥",
+        "column",
+        "a-기둥"
+      ],
+      "dxf_block": "",
+      "symbol_desc": "채운 사각/원 + 그리드 교점",
+      "facility": "",
+      "recognize_via": [
+        "synthetic",
+        "real_drawing"
+      ],
+      "notes": ""
+    },
+    {
+      "id": 3,
+      "key": "door",
+      "name_ko": "문(개폐방향)",
+      "group": "building",
+      "geometry": "arc",
+      "dxf_layers": [
+        "문",
+        "door",
+        "a-문"
+      ],
+      "dxf_block": "",
+      "symbol_desc": "개구부 + 도어스윙 호(90°)",
+      "facility": "",
+      "recognize_via": [
+        "synthetic",
+        "public_dataset",
+        "real_drawing"
+      ],
+      "notes": "피난 그래프의 통로 연결점. 스윙 호로 개폐방향 파악."
+    },
+    {
+      "id": 4,
+      "key": "window",
+      "name_ko": "창호",
+      "group": "building",
+      "geometry": "polyline",
+      "dxf_layers": [
+        "창",
+        "창호",
+        "window"
+      ],
+      "dxf_block": "",
+      "symbol_desc": "벽 개구부 + 평행 2~4선",
+      "facility": "",
+      "recognize_via": [
+        "synthetic",
+        "public_dataset",
+        "real_drawing"
+      ],
+      "notes": ""
+    },
+    {
+      "id": 5,
+      "key": "stair",
+      "name_ko": "계단",
+      "group": "building",
+      "geometry": "polygon",
+      "dxf_layers": [
+        "계단",
+        "stair",
+        "계단실"
+      ],
+      "dxf_block": "",
+      "symbol_desc": "평행 디딤판 선 + 진행방향 화살표",
+      "facility": "evacuation",
+      "recognize_via": [
+        "synthetic",
+        "real_drawing"
+      ],
+      "notes": "직통계단 보행거리·2개소 요구의 기준점."
+    },
+    {
+      "id": 6,
+      "key": "room",
+      "name_ko": "실(室) 경계",
+      "group": "building",
+      "geometry": "polygon",
+      "dxf_layers": [
+        "실구획",
+        "실",
+        "room",
+        "space",
+        "area",
+        "거실",
+        "zone"
+      ],
+      "dxf_block": "",
+      "symbol_desc": "닫힌 폴리라인(구획선)",
+      "facility": "",
+      "recognize_via": [
+        "synthetic",
+        "public_dataset",
+        "real_drawing"
+      ],
+      "notes": "면적·구획수 산정 단위. 닫힌 폴리라인 1개 = 1실."
+    },
+    {
+      "id": 7,
+      "key": "corridor",
+      "name_ko": "복도",
+      "group": "building",
+      "geometry": "polygon",
+      "dxf_layers": [
+        "복도",
+        "corridor"
+      ],
+      "dxf_block": "",
+      "symbol_desc": "긴 통로형 실",
+      "facility": "evacuation",
+      "recognize_via": [
+        "synthetic",
+        "real_drawing"
+      ],
+      "notes": "유효너비·보행거리 그래프의 간선. room 의 특수형."
+    },
+    {
+      "id": 8,
+      "key": "grid_axis",
+      "name_ko": "기둥 그리드축",
+      "group": "building",
+      "geometry": "polyline",
+      "dxf_layers": [
+        "그리드",
+        "grid",
+        "축"
+      ],
+      "dxf_block": "",
+      "symbol_desc": "일점쇄선 + 원형 버블(X1/Y1)",
+      "facility": "",
+      "recognize_via": [
+        "synthetic",
+        "real_drawing"
+      ],
+      "notes": ""
+    },
+    {
+      "id": 110,
+      "key": "smoke_detector",
+      "name_ko": "연기감지기",
+      "group": "fire_detect",
+      "geometry": "point",
+      "dxf_layers": [
+        "감지기",
+        "detector",
+        "fp_smoke"
+      ],
+      "dxf_block": "FP_SMOKE",
+      "symbol_desc": "사각 + 'S' (소방청 고시 별표)",
+      "facility": "detector",
+      "recognize_via": [
+        "synthetic",
+        "public_dataset",
+        "real_drawing",
+        "expert"
+      ],
+      "notes": ""
+    },
+    {
+      "id": 111,
+      "key": "heat_detector",
+      "name_ko": "열감지기",
+      "group": "fire_detect",
+      "geometry": "point",
+      "dxf_layers": [
+        "감지기",
+        "detector",
+        "fp_heat"
+      ],
+      "dxf_block": "FP_HEAT",
+      "symbol_desc": "평평한 윗변 + 하반원 돔(차동/정온 스포트형)",
+      "facility": "detector",
+      "recognize_via": [
+        "synthetic",
+        "real_drawing",
+        "expert"
+      ],
+      "notes": ""
+    },
+    {
+      "id": 112,
+      "key": "detector_linear",
+      "name_ko": "감지선형/공기관",
+      "group": "fire_detect",
+      "geometry": "polyline",
+      "dxf_layers": [
+        "공기관",
+        "감지선",
+        "linear"
+      ],
+      "dxf_block": "",
+      "symbol_desc": "실선(공기관식)·점선(감지선형)",
+      "facility": "detector",
+      "recognize_via": [
+        "synthetic",
+        "expert"
+      ],
+      "notes": ""
+    },
+    {
+      "id": 113,
+      "key": "manual_call",
+      "name_ko": "발신기(P형)",
+      "group": "fire_detect",
+      "geometry": "point",
+      "dxf_layers": [
+        "발신기",
+        "수동발신기",
+        "call"
+      ],
+      "dxf_block": "",
+      "symbol_desc": "원 + 'P' (수동발신기)",
+      "facility": "detector",
+      "recognize_via": [
+        "real_drawing",
+        "expert"
+      ],
+      "notes": ""
+    },
+    {
+      "id": 114,
+      "key": "detection_zone",
+      "name_ko": "경계구역",
+      "group": "fire_detect",
+      "geometry": "polygon",
+      "dxf_layers": [
+        "경계구역",
+        "zone"
+      ],
+      "dxf_block": "",
+      "symbol_desc": "굵은 일점쇄선 구획 + 구역번호",
+      "facility": "detector",
+      "recognize_via": [
+        "synthetic",
+        "expert"
+      ],
+      "notes": "600/1000㎡·변 50m 상위 제약(NFTC 203 2.1.1) 검사 단위."
+    },
+    {
+      "id": 210,
+      "key": "sprinkler_head",
+      "name_ko": "스프링클러 헤드",
+      "group": "fire_suppress",
+      "geometry": "point",
+      "dxf_layers": [
+        "스프링클러",
+        "sprinkler",
+        "헤드",
+        "fp_sprinkler"
+      ],
+      "dxf_block": "FP_SPRINKLER",
+      "symbol_desc": "원 + 내부 십자(⊕)",
+      "facility": "sprinkler",
+      "recognize_via": [
+        "synthetic",
+        "public_dataset",
+        "real_drawing",
+        "expert"
+      ],
+      "notes": ""
+    },
+    {
+      "id": 211,
+      "key": "hydrant_box",
+      "name_ko": "옥내소화전함",
+      "group": "fire_suppress",
+      "geometry": "point",
+      "dxf_layers": [
+        "소화전",
+        "hydrant",
+        "fp_hydrant"
+      ],
+      "dxf_block": "FP_HYDRANT",
+      "symbol_desc": "사각 함체 + 좌상 삼각 반채움",
+      "facility": "hydrant",
+      "recognize_via": [
+        "synthetic",
+        "real_drawing",
+        "expert"
+      ],
+      "notes": ""
+    },
+    {
+      "id": 212,
+      "key": "extinguisher",
+      "name_ko": "소화기",
+      "group": "fire_suppress",
+      "geometry": "point",
+      "dxf_layers": [
+        "소화기",
+        "extinguisher",
+        "fp_extinguisher"
+      ],
+      "dxf_block": "FP_EXTINGUISHER",
+      "symbol_desc": "원 + '소' (정삼각+F 통용기호도 가능)",
+      "facility": "extinguisher",
+      "recognize_via": [
+        "synthetic",
+        "public_dataset",
+        "real_drawing",
+        "expert"
+      ],
+      "notes": ""
+    },
+    {
+      "id": 213,
+      "key": "riser_alarm",
+      "name_ko": "입상관/알람밸브",
+      "group": "fire_suppress",
+      "geometry": "point",
+      "dxf_layers": [
+        "입상관",
+        "알람밸브",
+        "riser",
+        "fp_riser"
+      ],
+      "dxf_block": "FP_RISER",
+      "symbol_desc": "원 + 채운 위향 삼각(습식)",
+      "facility": "sprinkler",
+      "recognize_via": [
+        "synthetic",
+        "expert"
+      ],
+      "notes": "계통 기점. 습식=solid 채움/건식=미채움."
+    },
+    {
+      "id": 214,
+      "key": "sprinkler_pipe",
+      "name_ko": "스프링클러 배관",
+      "group": "fire_suppress",
+      "geometry": "polyline",
+      "dxf_layers": [
+        "배관",
+        "pipe",
+        "sp",
+        "가지배관"
+      ],
+      "dxf_block": "",
+      "symbol_desc": "굵은 실선 + 구경 주기(예 65A)",
+      "facility": "sprinkler",
+      "recognize_via": [
+        "synthetic",
+        "real_drawing",
+        "expert"
+      ],
+      "notes": "담당 헤드수→관경(NFTC 103 별표) 검사 대상."
+    },
+    {
+      "id": 215,
+      "key": "hydrant_pipe",
+      "name_ko": "소화전 배관",
+      "group": "fire_suppress",
+      "geometry": "polyline",
+      "dxf_layers": [
+        "소화전배관",
+        "hydrant pipe"
+      ],
+      "dxf_block": "",
+      "symbol_desc": "굵은 실선 + 구경 주기",
+      "facility": "hydrant",
+      "recognize_via": [
+        "synthetic",
+        "expert"
+      ],
+      "notes": ""
+    },
+    {
+      "id": 310,
+      "key": "exit_light",
+      "name_ko": "피난구유도등",
+      "group": "fire_evac",
+      "geometry": "point",
+      "dxf_layers": [
+        "유도등",
+        "피난구",
+        "exit",
+        "fp_exit"
+      ],
+      "dxf_block": "FP_EXIT",
+      "symbol_desc": "원/사각 + 세로 나비넥타이(피난구)",
+      "facility": "evacuation",
+      "recognize_via": [
+        "synthetic",
+        "real_drawing",
+        "expert"
+      ],
+      "notes": ""
+    },
+    {
+      "id": 311,
+      "key": "directional_light",
+      "name_ko": "통로유도등",
+      "group": "fire_evac",
+      "geometry": "point",
+      "dxf_layers": [
+        "통로유도등",
+        "directional"
+      ],
+      "dxf_block": "",
+      "symbol_desc": "사각 + 방향 화살표(러닝맨)",
+      "facility": "evacuation",
+      "recognize_via": [
+        "real_drawing",
+        "expert"
+      ],
+      "notes": ""
+    },
+    {
+      "id": 312,
+      "key": "escape_device",
+      "name_ko": "피난기구(완강기 등)",
+      "group": "fire_evac",
+      "geometry": "point",
+      "dxf_layers": [
+        "완강기",
+        "피난기구",
+        "escape"
+      ],
+      "dxf_block": "",
+      "symbol_desc": "원 + 약호(완강기 등)",
+      "facility": "evacuation",
+      "recognize_via": [
+        "synthetic",
+        "expert"
+      ],
+      "notes": "개구부 0.5×1.0m·적응층 3~10층(NFTC 301) 검사."
+    },
+    {
+      "id": 313,
+      "key": "emergency_light",
+      "name_ko": "비상조명등",
+      "group": "fire_evac",
+      "geometry": "point",
+      "dxf_layers": [
+        "비상조명",
+        "emergency light"
+      ],
+      "dxf_block": "",
+      "symbol_desc": "원 안 빗금/사각 안 ×",
+      "facility": "evacuation",
+      "recognize_via": [
+        "real_drawing",
+        "expert"
+      ],
+      "notes": ""
+    },
+    {
+      "id": 314,
+      "key": "fire_door",
+      "name_ko": "방화문",
+      "group": "fire_evac",
+      "geometry": "polyline",
+      "dxf_layers": [
+        "방화문",
+        "fd",
+        "fire door"
+      ],
+      "dxf_block": "",
+      "symbol_desc": "문 + 방화등급 표기(갑종/을종, FD)",
+      "facility": "evacuation",
+      "recognize_via": [
+        "synthetic",
+        "real_drawing",
+        "expert"
+      ],
+      "notes": ""
+    },
+    {
+      "id": 315,
+      "key": "evac_route",
+      "name_ko": "피난동선",
+      "group": "fire_evac",
+      "geometry": "polyline",
+      "dxf_layers": [
+        "피난",
+        "동선",
+        "evac route",
+        "f"
+      ],
+      "dxf_block": "",
+      "symbol_desc": "화살표 경로선(피난방향)",
+      "facility": "evacuation",
+      "recognize_via": [
+        "synthetic",
+        "expert"
+      ],
+      "notes": "가이드의 도면 'F' 라벨 경로. 직통계단까지 보행거리 산정선."
+    },
+    {
+      "id": 316,
+      "key": "smoke_control",
+      "name_ko": "제연설비",
+      "group": "fire_evac",
+      "geometry": "point",
+      "dxf_layers": [
+        "제연",
+        "급기",
+        "배기",
+        "smoke control"
+      ],
+      "dxf_block": "",
+      "symbol_desc": "급/배기 댐퍼 사각 + 화살표",
+      "facility": "evacuation",
+      "recognize_via": [
+        "real_drawing",
+        "expert"
+      ],
+      "notes": ""
+    },
+    {
+      "id": 410,
+      "key": "alarm_bell",
+      "name_ko": "경종/사이렌",
+      "group": "fire_alarm",
+      "geometry": "point",
+      "dxf_layers": [
+        "경종",
+        "사이렌",
+        "bell",
+        "sounder"
+      ],
+      "dxf_block": "",
+      "symbol_desc": "반원 안 빗금(경종)/원+물결(사이렌)",
+      "facility": "detector",
+      "recognize_via": [
+        "real_drawing",
+        "expert"
+      ],
+      "notes": ""
+    },
+    {
+      "id": 510,
+      "key": "cable_tray",
+      "name_ko": "케이블트레이",
+      "group": "mep",
+      "geometry": "polyline",
+      "dxf_layers": [
+        "e-트레이",
+        "트레이",
+        "tray",
+        "e-"
+      ],
+      "dxf_block": "",
+      "symbol_desc": "이중 평행선(천장 직하 배선)",
+      "facility": "",
+      "recognize_via": [
+        "synthetic",
+        "real_drawing"
+      ],
+      "notes": "fireopt.clash 의 z-밴드 간섭검토 대상. 소방기기 평면교차=충돌."
+    },
+    {
+      "id": 511,
+      "key": "elec_conduit",
+      "name_ko": "전선관/배선",
+      "group": "mep",
+      "geometry": "polyline",
+      "dxf_layers": [
+        "전선",
+        "conduit",
+        "배선",
+        "e-"
+      ],
+      "dxf_block": "",
+      "symbol_desc": "가는 실선 + 회로기호",
+      "facility": "",
+      "recognize_via": [
+        "real_drawing"
+      ],
+      "notes": ""
+    },
+    {
+      "id": 610,
+      "key": "room_label",
+      "name_ko": "실명/실번호",
+      "group": "annotation",
+      "geometry": "text",
+      "dxf_layers": [
+        "문자",
+        "text",
+        "주기"
+      ],
+      "dxf_block": "",
+      "symbol_desc": "TEXT/MTEXT(실명 + R-101 등 실번호)",
+      "facility": "",
+      "recognize_via": [
+        "synthetic",
+        "real_drawing"
+      ],
+      "notes": "room 폴리곤에 실명 매칭(dxf_loader._name_for)."
+    },
+    {
+      "id": 611,
+      "key": "dimension",
+      "name_ko": "치수",
+      "group": "annotation",
+      "geometry": "dimension",
+      "dxf_layers": [
+        "치수",
+        "dim"
+      ],
+      "dxf_block": "",
+      "symbol_desc": "치수선 + 치수보조선 + 치수문자",
+      "facility": "",
+      "recognize_via": [
+        "synthetic",
+        "real_drawing"
+      ],
+      "notes": ""
+    },
+    {
+      "id": 612,
+      "key": "titleblock",
+      "name_ko": "표제란",
+      "group": "annotation",
+      "geometry": "polyline",
+      "dxf_layers": [
+        "표제란",
+        "title",
+        "titleblock"
+      ],
+      "dxf_block": "",
+      "symbol_desc": "우하단 박스(도면명·축척·단위)",
+      "facility": "",
+      "recognize_via": [
+        "real_drawing"
+      ],
+      "notes": ""
+    }
+  ]
+}
