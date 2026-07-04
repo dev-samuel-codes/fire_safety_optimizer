@@ -255,12 +255,13 @@ def check_layout(rooms, devices, meta=None):
         for r in rooms:
             s_in = [p for p in smoke if _in(r.polygon, p)]
             h_in = [p for p in heat if _in(r.polygon, p)]
-            if h_in:      # 열감지기 종별(차동식/정온식) 미상 → 관대끝값(70㎡) 단정 금지(false-pass).
-                # 최관대(차동식2종)로도 미달=확정 위반, 최엄격(정온식2종)도 충족=확정 적합, 사이=확인필요.
+            if h_in:      # 열감지기 종별(차동식/정온식) 미상 → 관대끝값 단정 금지(false-pass).
+                # 최관대(차동식1종 90/50㎡)로도 미달=확정 위반, 최엄격(정온식2종 20/15㎡)도 충족=확정
+                # 적합, 사이=종별미상 확인필요. (하한을 diff_spot_2(70)로 잡으면 차동식1종 적법설계를 오위반)
                 n = len(h_in)
                 try:
-                    a_lo = C.detector_area("diff_spot_2", mount_height, structure)   # 최대면적=최소개수
-                    a_hi = C.detector_area("fixed_spot_2", mount_height, structure)  # 최소면적=최대개수
+                    a_lo = C.detector_area("diff_spot_1", mount_height, structure)   # 최대면적=최소개수(최관대)
+                    a_hi = C.detector_area("fixed_spot_2", mount_height, structure)  # 최소면적=최대개수(최엄격)
                 except (ValueError, KeyError):     # 열 스포트형은 4m 미만 스펙 → 부착높이 ≥4m 범위외
                     out.append(_mk("FV-DET-heat_bounded", "not_applicable",
                         desc=f"{r.name}: 열감지기 {n}개, 부착높이 {mount_height:.0f}m — 열감지기 감지면적 범위외(≥4m), 확인 필요",

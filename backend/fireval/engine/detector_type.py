@@ -46,8 +46,8 @@ _SLEEP_OCCUPANCY = ("공동주택", "숙박", "노유자", "의료", "수련", "
 # 2.4.5 감지기 설치제외 대상 '가능성'(원문 미확보 → 단정 않고 flag만; 요구 N은 보수적으로 유지).
 _MAYBE_EXEMPT = ("화장실", "목욕실", "샤워실", "변소")
 # 대표 열감지기 종별 편차가 큼(차동식2종 70㎡ vs 정온식2종 20㎡) → 조건부 N은 범위로 표시.
-_HEAT_LOOSE = "diff_spot_2"    # 흔한 열(차동식 2종) — 개수 하한
-_HEAT_STRICT = "fixed_spot_2"  # 정온식 2종 — 개수 상한(보수적)
+_HEAT_LOOSE = "diff_spot_1"    # 최관대 열(차동식 1종, 90/50㎡) — 개수 하한
+_HEAT_STRICT = "fixed_spot_2"  # 최엄격 열(정온식 2종, 20/15㎡) — 개수 상한(보수적)
 
 
 def required_detector_type(name: str, occupancy: str = "",
@@ -127,21 +127,22 @@ def detector_requirement(name: str, area_m2: float, *, occupancy: str = "",
 
     # conditional / designer_choice → 종류 미확정 → 조건부 N (연기 vs 열 범위)
     n_smoke = _n_for(_SMOKE, area_m2, mount_height, structure)
-    n_heat_lo = _n_for(_HEAT_LOOSE, area_m2, mount_height, structure)     # 차동식2종 70㎡
-    n_heat_hi = _n_for(_HEAT_STRICT, area_m2, mount_height, structure)    # 정온식2종 20㎡(보수적)
+    n_heat_lo = _n_for(_HEAT_LOOSE, area_m2, mount_height, structure)     # 차동식1종(최관대) 90/50㎡
+    n_heat_hi = _n_for(_HEAT_STRICT, area_m2, mount_height, structure)    # 정온식2종(최엄격) 20/15㎡
     if n_heat_lo is None:
         heat_str = "설치범위외"
     elif n_heat_hi is None or n_heat_lo == n_heat_hi:
         heat_str = str(n_heat_lo)
     else:
         heat_str = f"{n_heat_lo}~{n_heat_hi}"
+    heat_disp = heat_str if heat_str == "설치범위외" else f"{heat_str}개"    # '개' 접미 문법 보정
     reason = cls["condition"] or "감지기 종류 미확정(법 미지정=설계자 선택)"
     return {"status": "needs_review", "room": name, "area_m2": round(area_m2, 1),
             "reason": reason, "basis": cls.get("basis", ""),
             "maybe_exempt": cls.get("maybe_exempt", False),
             "conditional": {"연기": n_smoke, "열(종별따라)": heat_str},
             "detail": f"{name} {area_m2:.1f}㎡ → 종류 미확정: 연기 {n_smoke}개 / "
-                      f"열 {heat_str}개(차동식2종~정온식2종, 부착높이 {mount_height:.0f}m 가정) — 확정하려면 감지기 인식 필요"}
+                      f"열 {heat_disp}(차동식1종~정온식2종, 부착높이 {mount_height:.0f}m 가정) — 확정하려면 감지기 인식 필요"}
 
 
 def judge_rooms(rooms, *, occupancy="", structure=None, mount_height=3.0):
@@ -158,8 +159,12 @@ def judge_rooms(rooms, *, occupancy="", structure=None, mount_height=3.0):
         name = r.get("name", "")
         area = float(r.get("area_m2", 0.0) or 0.0)
         if not r.get("reliable", False):
+            rc = r.get("cross_m2") or 0
             if r.get("confidence", 0) >= 0.6 and not r.get("cross_ok", True):
-                reason = "flood-fill·레이캐스트 면적 불일치 — 병합 의심(확인 필요)"
+                if rc and area > rc:      # flood-fill이 레이캐스트보다 큼 = 병합/누출
+                    reason = "면적 과대 — 무명공간 병합/누출 의심(확인 필요)"
+                else:                     # flood-fill이 더 작음 = 비직사각형/집기
+                    reason = "레이캐스트 대비 과소 — 비직사각형/집기 가능(확인 필요)"
             else:
                 reason = "면적 신뢰도 낮음(추출 불안정·붕괴 의심)"
             out.append({"room": name, "status": "needs_review", "area_m2": round(area, 1),

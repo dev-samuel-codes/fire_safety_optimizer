@@ -114,20 +114,22 @@ def _parse_drawing(file_storage, structure=None, occupancy="", mount_height=3.0)
 def _real_violations(dxf_path, structure, occupancy, mount_height):
     """깨끗 규격(방 폴리곤 + 소방설비 심볼 추출되는) 도면이면 규칙엔진으로 **실 pass/fail**.
 
-    게이트: (a)구조·부착높이가 유효할 때만 — 미상을 낙관 가정하면 감지기 과소=false-pass
-    (roomJudgments의 needs_review 규율과 일치). (b)방 sane + 설비 심볼 발견 시에만. 아니면 [](가짜 금지).
-    반환: [{ruleId, status(violation|compliant|not_applicable), severity, description, ...}, ...]
+    입력 의존별 게이트(검사 통째 억제 금지 — 커버리지 회귀 방지):
+      · 감지기 감지면적(FV-DET-*)은 구조+층고 필요 → 미상이면 그 검사만 not_applicable(확인필요).
+      · 스프링클러(FV-SPK-*)는 구조 필요 → 구조 미상이면 그 검사만 not_applicable.
+      · 소화기(FV-EXT-*)·소화전(FV-HYD-*)·직통계단(FV-EVA-*)은 구조/층고 무관 → 그대로 판정.
+    구조/층고 미상 시엔 엔진은 보수 기본(other/3m)로 돌리되, 위 규칙으로 의존 검사만 강등한다.
     """
-    if structure not in ("fireproof", "noncombustible", "other") or mount_height is None:
-        return []       # 구조/부착높이 미상 → 실 pass/fail 보류(낙관 가정 금지). roomJudgments로 폴백.
+    struct_known = structure in ("fireproof", "noncombustible", "other")
+    height_known = mount_height is not None
     try:
         from ..ingest.dxf_ir import ingest_and_check, ir_summary
         ann, viols = ingest_and_check(
             dxf_path,
-            structure=structure,
+            structure=structure if struct_known else "other",   # 미상→보수(기타=더많이 필요, 강등 예정)
             occupancy=occupancy or "common",
             detector_type="smoke_12",
-            mount_height=mount_height)
+            mount_height=mount_height if height_known else 3.0)
         by = ir_summary(ann).get("by_category", {})
         n_rooms = by.get("room", 0)
         n_dev = sum(v for k, v in by.items() if k not in ("room", "door"))
@@ -136,11 +138,20 @@ def _real_violations(dxf_path, structure, occupancy, mount_height):
         out = []
         for v in viols:
             if v.status not in ("violation", "compliant", "not_applicable"):
-                continue      # not_applicable=확인필요(열감지기 종별미상 등) — 숨기지 않고 노출
+                continue
+            rid = v.rule_id or ""
+            status, desc = v.status, (v.description or "")
+            needs_struct = rid.startswith(("FV-DET-", "FV-SPK-"))
+            needs_height = rid.startswith("FV-DET-")
+            if (needs_struct and not struct_known) or (needs_height and not height_known):
+                miss = "·".join(x for x, ok in (("구조", struct_known), ("층고", height_known)) if not ok)
+                room = desc.split(":")[0] if ":" in desc else desc
+                status = "not_applicable"
+                desc = f"{room}: 적정성 확인 필요 ({miss} 미상 — 감지면적/반경 기준 확정 불가)"
             out.append({
-                "ruleId": v.rule_id, "status": v.status,
+                "ruleId": rid, "status": status,
                 "severity": getattr(v, "severity", "") or "",
-                "description": v.description or "",
+                "description": desc,
                 "measured": v.measured_value, "required": v.required_value,
                 "unit": v.unit or ""})
         return out
