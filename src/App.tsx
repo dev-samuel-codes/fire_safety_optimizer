@@ -43,21 +43,29 @@ export function App() {
   const zoomLevelRef = useRef(zoomLevel);
 
   // ── 백엔드(FireVal/FireOpt 엔진) 실시간 연결: POST /api/analyze ──
+  const [structure, setStructure] = useState<string>("");   // "" 미상 | "fireproof" | "other"
   const [analysis, setAnalysis] = useState<{
     drawingInfo?: {
       fileName?: string; layerCount?: number; entityCount?: number;
       fireLayers?: string[]; roomNames?: string[]; error?: string;
     } | null;
-  }>({ drawingInfo: null });
+    roomJudgments?: Array<{
+      room?: string; status?: string; area_m2?: number;
+      detail?: string; reason?: string; basis?: string;
+    }>;
+  }>({ drawingInfo: null, roomJudgments: [] });
 
-  // 업로드 파일이 있으면 FormData로 전송 → 백엔드가 그 도면의 실제 정보(drawingInfo) 반환
-  const runAnalysis = useCallback((file?: File) => {
+  // 업로드 파일 + 구조를 FormData로 전송 → 백엔드가 실제 사실 + 방별 NFTC 판정 반환
+  const runAnalysis = useCallback((file?: File, structureVal?: string) => {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 30000);
     const options: RequestInit = { method: "POST", signal: controller.signal };
     if (file) {
       const form = new FormData();
       form.append("file", file);
+      if (structureVal) {
+        form.append("structure", structureVal);
+      }
       options.body = form;
     }
     fetch("/api/analyze", options)
@@ -68,7 +76,7 @@ export function App() {
         return res.json();
       })
       .then((d) => {
-        setAnalysis({ drawingInfo: d.drawingInfo ?? null });
+        setAnalysis({ drawingInfo: d.drawingInfo ?? null, roomJudgments: d.roomJudgments ?? [] });
         if (file) {
           setToast(d.drawingInfo?.error ? `추출 실패: ${d.drawingInfo.error}` : `${file.name} 분석 완료`);
         }
@@ -110,7 +118,15 @@ export function App() {
     setZoomLevel((current) => Math.max(current, uploadedDrawingInitialZoom));
     setPanOffset({ x: 0, y: 0 });
     setToast(`${file.name} 분석 중… (도면 정보 추출)`);
-    runAnalysis(file);
+    runAnalysis(file, structure);
+  };
+
+  // 건물 구조 변경 → 업로드된 도면 재판정(구조는 열감지기 기준면적에 영향 = 안전 임계 입력)
+  const handleStructureChange = (value: string) => {
+    setStructure(value);
+    if (uploadedFile) {
+      runAnalysis(uploadedFile, value);
+    }
   };
 
   const handleToolAction = (toolId: ToolId) => {
@@ -332,8 +348,39 @@ export function App() {
                 도면을 업로드하면 이 도면의 방·소방 설비를 추출합니다.
               </p>
             )}
+            {analysis.drawingInfo && !analysis.drawingInfo.error ? (
+              <div style={{ marginBottom: 12 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "4px 0 8px" }}>
+                  <span style={{ fontSize: 12.5, fontWeight: 600 }}>방별 판정</span>
+                  <select
+                    value={structure}
+                    onChange={(event) => handleStructureChange(event.target.value)}
+                    style={{ fontSize: 11.5, padding: "2px 6px", borderRadius: 6, background: "rgba(120,140,170,0.15)", color: "inherit", border: "1px solid rgba(120,140,170,0.35)" }}
+                  >
+                    <option value="">건물구조 미상</option>
+                    <option value="fireproof">내화구조</option>
+                    <option value="other">기타구조</option>
+                  </select>
+                </div>
+                {(analysis.roomJudgments ?? []).length === 0 ? (
+                  <p style={{ fontSize: 11.5, opacity: 0.6 }}>추출된 방 판정 없음(벽 레이어 인식 한계 가능).</p>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 5, maxHeight: 260, overflowY: "auto" }}>
+                    {(analysis.roomJudgments ?? []).map((j, i) => (
+                      <div key={`${j.room}-${i}`} style={{ fontSize: 11.5, lineHeight: 1.45, padding: "6px 8px", borderRadius: 6,
+                        background: j.status === "determined" ? "rgba(210,80,80,0.14)" : "rgba(120,140,170,0.1)",
+                        borderLeft: `3px solid ${j.status === "determined" ? "#e05a5a" : "#8fa4c8"}` }}>
+                        <b>{j.room || "—"}</b>{j.area_m2 ? ` · ${j.area_m2}㎡` : ""}
+                        {j.status === "needs_review" ? <span style={{ opacity: 0.65 }}> · 확인 필요</span> : null}
+                        <div style={{ opacity: 0.85, marginTop: 2 }}>{j.detail || j.reason}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : null}
             <p style={{ fontSize: 11.5, margin: 0, lineHeight: 1.6, padding: "10px 12px", borderRadius: 8, background: "rgba(90,120,180,0.12)", color: "#9fb4d8" }}>
-              <b>NFTC 적정성 판정</b>은 설비 인식·방 면적 자동추출 연결 후 제공됩니다. 지금은 도면에서 <b>확실히 추출되는 사실만</b> 표시합니다.
+              방 면적은 flood-fill로 추출(신뢰 방만). <b>확정 pass/fail(배치 vs 필요)은 감지기 인식 연결 후</b> — 지금은 요구/조건부만. 구조 미상이면 판정 보류(안전).
             </p>
           </section>
         </aside>

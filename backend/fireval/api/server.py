@@ -48,8 +48,12 @@ _DWG2DXF = (os.environ.get("DWG2DXF") or shutil.which("dwg2dxf")
             or "/A.I_DATA/jbnu/miniconda3/envs/dwgtools/bin/dwg2dxf")
 
 
-def _parse_drawing(file_storage):
-    """업로드 DWG/DXF → 실제 도면 정보(레이어·엔티티·소방레이어·실명). 임시파일은 반드시 정리."""
+def _parse_drawing(file_storage, structure=None):
+    """업로드 DWG/DXF → (사실 dict, 방판정 list). 임시파일은 반드시 정리.
+
+    사실=레이어·엔티티·소방레이어·실명. 방판정=flood-fill 면적 + NFTC 종류/요구(①).
+    structure 미상(None)이면 판정은 needs_review(열 과소계산 위험방향 차단).
+    """
     import tempfile
     import subprocess
     from collections import Counter
@@ -63,16 +67,16 @@ def _parse_drawing(file_storage):
     try:
         if ext == ".dwg":
             if not _DWG2DXF or not os.path.exists(_DWG2DXF):
-                return {"fileName": name, "error": "서버에 DWG 변환 도구(dwg2dxf)가 없습니다."}
+                return {"fileName": name, "error": "서버에 DWG 변환 도구(dwg2dxf)가 없습니다."}, []
             dxf_path = tmp.name + ".dxf"
             cleanup.append(dxf_path)
             try:
                 r = subprocess.run([_DWG2DXF, "-y", "-o", dxf_path, tmp.name],
                                    capture_output=True, text=True, timeout=60)
             except subprocess.TimeoutExpired:
-                return {"fileName": name, "error": "DWG 변환 시간 초과"}
+                return {"fileName": name, "error": "DWG 변환 시간 초과"}, []
             if r.returncode != 0 or not os.path.exists(dxf_path):
-                return {"fileName": name, "error": "DWG→DXF 변환 실패"}
+                return {"fileName": name, "error": "DWG→DXF 변환 실패"}, []
         import ezdxf
         doc = ezdxf.readfile(dxf_path)
         msp = doc.modelspace()
@@ -92,10 +96,21 @@ def _parse_drawing(file_storage):
                 if 2 <= len(t) <= 12 and any('가' <= c <= '힣' for c in t) and "평면도" not in t \
                         and (t.endswith(("실", "장")) or any(k in t for k in room_kw)):
                     rooms.append(t)
-        return {"fileName": name, "layerCount": len(doc.layers), "entityCount": len(msp),
-                "fireLayers": list(fire_layers), "roomNames": list(dict.fromkeys(rooms))[:20]}
+        facts = {"fileName": name, "layerCount": len(doc.layers), "entityCount": len(msp),
+                 "fireLayers": list(fire_layers), "roomNames": list(dict.fromkeys(rooms))[:20]}
+        # ① 방 판정 — flood-fill 면적 + NFTC 종류/요구(구조 미상/미신뢰=needs_review). 실패해도 사실은 반환.
+        judgments = []
+        try:
+            from ..ingest.room_extract_raster import guess_wall_layers, rooms_from_dxf
+            from ..engine.detector_type import judge_rooms
+            walls = guess_wall_layers(doc)
+            extracted = rooms_from_dxf(doc, walls) if walls else []
+            judgments = judge_rooms(extracted, occupancy="", structure=structure)
+        except Exception as e:
+            judgments = [{"room": "", "status": "needs_review", "reason": f"방 판정 생략: {e}"}]
+        return facts, judgments
     except Exception as e:
-        return {"fileName": name, "error": f"DXF 파싱 실패: {e}"}
+        return {"fileName": name, "error": f"DXF 파싱 실패: {e}"}, []
     finally:
         for p in cleanup:
             try:
@@ -109,14 +124,17 @@ def analyze():
     if request.method == "OPTIONS":
         return ("", 204)
 
-    drawing_info = None
+    drawing_info, room_judgments = None, []
     if "file" in request.files and request.files["file"].filename:
-        drawing_info = _parse_drawing(request.files["file"])
+        structure = request.form.get("structure") or None    # "fireproof"|"other"|미상(None)
+        drawing_info, room_judgments = _parse_drawing(request.files["file"], structure)
 
-    # 판정은 미연결(정직) — 가짜 데모 판정을 내보내지 않는다. 사실(drawingInfo)만.
+    # 방별 요구 판정(①): 면적(flood-fill)+NFTC 종류/요구. 구조 미상/면적 미신뢰=needs_review(정직).
+    # 확정 pass/fail(배치 vs 필요)은 감지기 인식(B) 연결 후.
     return jsonify({
         "drawingInfo": drawing_info,           # ← 업로드 도면의 실제 사실
-        "violations": [],                      # ← NFTC 적정성 판정: 인식 파이프라인 연결 후
+        "roomJudgments": room_judgments,       # ← 방별 NFTC 요구/미확정
+        "violations": [],
         "recommendations": [],
         "judgmentStatus": "pending-recognition",
     })

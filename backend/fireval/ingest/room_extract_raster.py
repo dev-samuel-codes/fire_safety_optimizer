@@ -101,6 +101,22 @@ _ROOM_NAME_KEYWORDS = ("보육", "유희", "놀이", "조리", "교사", "사무
                        "주방", "숙소", "침실", "객실", "병실", "입원", "교재", "관리", "휴게", "식당")
 
 
+def guess_wall_layers(doc):
+    """벽/칸막이일 법한 레이어 자동 추정 (휴리스틱 — 도면마다 달라 완벽하지 않음).
+
+    이름 키워드(WAL/WALL/COL/WINDOW/ARCH/벽/구조/기둥) 매칭; 없으면 LINE 최다 레이어 폴백.
+    실패해도(엉뚱한 레이어) 하류 flood-fill이 신뢰도 낮은 방을 needs_review로 걸러낸다.
+    """
+    from collections import Counter
+    lc = Counter(e.dxf.layer for e in doc.modelspace().query("LINE"))
+    if not lc:
+        return []
+    cand = [ln for ln in lc
+            if any(k in ln.upper() for k in ("WAL", "WALL", "COL", "WINDOW", "WID", "ARCH"))
+            or any(k in ln for k in ("벽", "구조", "옹벽", "기둥"))]
+    return cand or [lc.most_common(1)[0][0]]
+
+
 def rooms_from_dxf(doc, wall_layers, *, room_layers=None, mm_per_px=25.0, **kw):
     """dxf 문서 + 벽 레이어 → 방(name·area·confidence) 리스트.
 
