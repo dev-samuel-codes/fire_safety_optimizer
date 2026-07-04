@@ -226,6 +226,7 @@ def check_layout(rooms, devices, meta=None):
     from shapely.geometry import Polygon  # 지역 import(상단 미사용 회피)
     meta = meta or {}
     structure = meta.get("structure", "fireproof")
+    mount_height = float(meta.get("mount_height", 3.0) or 3.0)   # 부착높이(층고) — 감지면적 4m 분기
     region = unary_union([r.polygon for r in rooms]) if rooms else None
     out = []
 
@@ -254,12 +255,38 @@ def check_layout(rooms, devices, meta=None):
         for r in rooms:
             s_in = [p for p in smoke if _in(r.polygon, p)]
             h_in = [p for p in heat if _in(r.polygon, p)]
-            if h_in:      # 반원 기호=차동식 스포트형 2종 가정(가장 흔한 열감지기), 4m미만 내화 70㎡
-                out.append(check_detector_area(r, h_in, dtype="diff_spot_2", structure=structure))
+            if h_in:      # 열감지기 종별(차동식/정온식) 미상 → 관대끝값 단정 금지(false-pass).
+                # 최관대(차동식1종 90/50㎡)로도 미달=확정 위반, 최엄격(정온식2종 20/15㎡)도 충족=확정
+                # 적합, 사이=종별미상 확인필요. (하한을 diff_spot_2(70)로 잡으면 차동식1종 적법설계를 오위반)
+                n = len(h_in)
+                try:
+                    a_lo = C.detector_area("diff_spot_1", mount_height, structure)   # 최대면적=최소개수(최관대)
+                    a_hi = C.detector_area("fixed_spot_2", mount_height, structure)  # 최소면적=최대개수(최엄격)
+                except (ValueError, KeyError):     # 열 스포트형은 4m 미만 스펙 → 부착높이 ≥4m 범위외
+                    out.append(_mk("FV-DET-heat_bounded", "not_applicable",
+                        desc=f"{r.name}: 열감지기 {n}개, 부착높이 {mount_height:.0f}m — 열감지기 감지면적 범위외(≥4m), 확인 필요",
+                        evidence=_poly_evidence(r.polygon)))
+                else:
+                    need_lo = max(1, math.ceil(r.area / a_lo))
+                    need_hi = max(1, math.ceil(r.area / a_hi))
+                    if n >= need_hi:
+                        out.append(_mk("FV-DET-heat_bounded", "compliant",
+                            desc=f"{r.name}: 열감지기 {n}개 ≥ 최엄격 필요 {need_hi}개 → 종별무관 적합(부착높이 {mount_height:.0f}m)",
+                            evidence=_poly_evidence(r.polygon)))
+                    elif n < need_lo:
+                        out.append(_mk("FV-DET-heat_bounded", "violation",
+                            desc=f"{r.name}: 열감지기 {n}개 < 최관대 필요 {need_lo}개 → 종별무관 위반(부착높이 {mount_height:.0f}m)",
+                            evidence=_poly_evidence(r.polygon)))
+                    else:
+                        out.append(_mk("FV-DET-heat_bounded", "not_applicable",
+                            desc=f"{r.name}: 열감지기 {n}개(필요 {need_lo}~{need_hi}개) — 종별(차동식/정온식) 미상, 확인 필요",
+                            evidence=_poly_evidence(r.polygon)))
             if s_in:
-                out.append(check_detector_area(r, s_in, dtype="smoke_12", structure=structure))
+                out.append(check_detector_area(r, s_in, dtype="smoke_12",
+                                               mount_height=mount_height, structure=structure))
             if not s_in and not h_in:   # 무설치 방 → 도면 기본종별로 미달 판정(과거 동작 보존)
-                out.append(check_detector_area(r, [], dtype=default_dtype, structure=structure))
+                out.append(check_detector_area(r, [], dtype=default_dtype,
+                                               mount_height=mount_height, structure=structure))
 
     ext = devices.get("extinguisher") or []
     if rooms and ext:

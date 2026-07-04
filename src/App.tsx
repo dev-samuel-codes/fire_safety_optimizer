@@ -43,21 +43,40 @@ export function App() {
   const zoomLevelRef = useRef(zoomLevel);
 
   // ── 백엔드(FireVal/FireOpt 엔진) 실시간 연결: POST /api/analyze ──
+  const [structure, setStructure] = useState<string>("");   // "" 미상 | "fireproof" | "other"
+  const [occupancy, setOccupancy] = useState<string>("");   // "" 미상 | 용도 문자열
+  const [mount, setMount] = useState<string>("");           // "" 미상 | "lt4"(<4m) | "ge4"(≥4m)
   const [analysis, setAnalysis] = useState<{
     drawingInfo?: {
       fileName?: string; layerCount?: number; entityCount?: number;
       fireLayers?: string[]; roomNames?: string[]; error?: string;
     } | null;
-  }>({ drawingInfo: null });
+    roomJudgments?: Array<{
+      room?: string; status?: string; area_m2?: number;
+      detail?: string; reason?: string; basis?: string;
+    }>;
+    violations?: Array<{
+      ruleId?: string; status?: string; severity?: string; description?: string;
+    }>;
+  }>({ drawingInfo: null, roomJudgments: [], violations: [] });
 
-  // 업로드 파일이 있으면 FormData로 전송 → 백엔드가 그 도면의 실제 정보(drawingInfo) 반환
-  const runAnalysis = useCallback((file?: File) => {
+  // 업로드 파일 + 구조/용도를 FormData로 전송 → 백엔드가 사실 + 방별요구 + (깨끗규격이면) 실 pass/fail 반환
+  const runAnalysis = useCallback((file?: File, structureVal?: string, occupancyVal?: string, mountVal?: string) => {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 30000);
     const options: RequestInit = { method: "POST", signal: controller.signal };
     if (file) {
       const form = new FormData();
       form.append("file", file);
+      if (structureVal) {
+        form.append("structure", structureVal);
+      }
+      if (occupancyVal) {
+        form.append("occupancy", occupancyVal);
+      }
+      if (mountVal) {
+        form.append("mount", mountVal);
+      }
       options.body = form;
     }
     fetch("/api/analyze", options)
@@ -68,7 +87,11 @@ export function App() {
         return res.json();
       })
       .then((d) => {
-        setAnalysis({ drawingInfo: d.drawingInfo ?? null });
+        setAnalysis({
+          drawingInfo: d.drawingInfo ?? null,
+          roomJudgments: d.roomJudgments ?? [],
+          violations: d.violations ?? [],
+        });
         if (file) {
           setToast(d.drawingInfo?.error ? `추출 실패: ${d.drawingInfo.error}` : `${file.name} 분석 완료`);
         }
@@ -110,7 +133,31 @@ export function App() {
     setZoomLevel((current) => Math.max(current, uploadedDrawingInitialZoom));
     setPanOffset({ x: 0, y: 0 });
     setToast(`${file.name} 분석 중… (도면 정보 추출)`);
-    runAnalysis(file);
+    runAnalysis(file, structure, occupancy, mount);
+  };
+
+  // 건물 구조 변경 → 재판정(구조는 열감지기 기준면적에 영향 = 안전 임계 입력)
+  const handleStructureChange = (value: string) => {
+    setStructure(value);
+    if (uploadedFile) {
+      runAnalysis(uploadedFile, value, occupancy, mount);
+    }
+  };
+
+  // 용도 변경 → 재판정(취침거실 연기의무·스프링클러 반경 등에 영향)
+  const handleOccupancyChange = (value: string) => {
+    setOccupancy(value);
+    if (uploadedFile) {
+      runAnalysis(uploadedFile, structure, value, mount);
+    }
+  };
+
+  // 부착높이(층고) 변경 → 재판정(4m 경계로 감지면적이 갈림 = 안전 임계 입력)
+  const handleMountChange = (value: string) => {
+    setMount(value);
+    if (uploadedFile) {
+      runAnalysis(uploadedFile, structure, occupancy, value);
+    }
   };
 
   const handleToolAction = (toolId: ToolId) => {
@@ -303,8 +350,33 @@ export function App() {
           <section className="analysis-panel">
             <div className="list-header">
               <h3>법규 판정 (NFTC)</h3>
-              <span style={{ fontSize: 12, opacity: 0.7 }}>판정 엔진: 준비 중</span>
+              <span style={{ fontSize: 12, opacity: 0.7 }}>
+                {(analysis.violations ?? []).length > 0 ? "실 판정" : "요구 산정"}
+              </span>
             </div>
+            {(analysis.violations ?? []).length > 0 ? (
+              <div style={{ marginBottom: 14 }}>
+                <div style={{ display: "flex", gap: 10, marginBottom: 8, fontSize: 12.5 }}>
+                  <span style={{ color: "#e05a5a", fontWeight: 600 }}>위반 {(analysis.violations ?? []).filter((v) => v.status === "violation").length}</span>
+                  <span style={{ color: "#5ac08a", fontWeight: 600 }}>적합 {(analysis.violations ?? []).filter((v) => v.status === "compliant").length}</span>
+                  <span style={{ color: "#d2a03c", fontWeight: 600 }}>확인필요 {(analysis.violations ?? []).filter((v) => v.status === "not_applicable").length}</span>
+                  <span style={{ opacity: 0.6 }}>· 배치 vs 필요</span>
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 4, maxHeight: 220, overflowY: "auto" }}>
+                  {(analysis.violations ?? []).slice().sort((a, b) => (a.status === "violation" ? 0 : a.status === "not_applicable" ? 1 : 2) - (b.status === "violation" ? 0 : b.status === "not_applicable" ? 1 : 2)).map((v, i) => {
+                    const tone = v.status === "violation" ? { bg: "rgba(224,90,90,0.16)", bar: "#e05a5a", fg: "#e88", label: "위반" }
+                      : v.status === "not_applicable" ? { bg: "rgba(210,160,60,0.13)", bar: "#d2a03c", fg: "#d9b060", label: "확인필요" }
+                      : { bg: "rgba(90,192,138,0.12)", bar: "#5ac08a", fg: "#8d8", label: "적합" };
+                    return (
+                      <div key={`${v.ruleId}-${i}`} style={{ fontSize: 11.5, lineHeight: 1.4, padding: "5px 8px", borderRadius: 6,
+                        background: tone.bg, borderLeft: `3px solid ${tone.bar}` }}>
+                        <b style={{ color: tone.fg }}>{tone.label}</b> · {v.description}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : null}
             {analysis.drawingInfo && !analysis.drawingInfo.error ? (
               <div style={{ marginBottom: 12 }}>
                 <p style={{ fontSize: 12.5, margin: "0 0 8px", lineHeight: 1.6 }}>
@@ -332,8 +404,62 @@ export function App() {
                 도면을 업로드하면 이 도면의 방·소방 설비를 추출합니다.
               </p>
             )}
+            {analysis.drawingInfo && !analysis.drawingInfo.error ? (
+              <div style={{ marginBottom: 12 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "4px 0 8px" }}>
+                  <span style={{ fontSize: 12.5, fontWeight: 600 }}>방별 판정</span>
+                  <select
+                    value={structure}
+                    onChange={(event) => handleStructureChange(event.target.value)}
+                    style={{ fontSize: 11.5, padding: "2px 6px", borderRadius: 6, background: "rgba(120,140,170,0.15)", color: "inherit", border: "1px solid rgba(120,140,170,0.35)" }}
+                  >
+                    <option value="">건물구조 미상</option>
+                    <option value="fireproof">내화구조</option>
+                    <option value="other">기타구조</option>
+                  </select>
+                  <select
+                    value={occupancy}
+                    onChange={(event) => handleOccupancyChange(event.target.value)}
+                    style={{ fontSize: 11.5, padding: "2px 6px", borderRadius: 6, background: "rgba(120,140,170,0.15)", color: "inherit", border: "1px solid rgba(120,140,170,0.35)" }}
+                  >
+                    <option value="">용도 미상</option>
+                    <option value="공동주택">공동주택</option>
+                    <option value="숙박시설">숙박시설</option>
+                    <option value="의료시설">의료시설</option>
+                    <option value="노유자시설">노유자시설</option>
+                    <option value="교육연구시설">교육연구시설</option>
+                    <option value="업무시설">업무시설</option>
+                  </select>
+                  <select
+                    value={mount}
+                    onChange={(event) => handleMountChange(event.target.value)}
+                    style={{ fontSize: 11.5, padding: "2px 6px", borderRadius: 6, background: "rgba(120,140,170,0.15)", color: "inherit", border: "1px solid rgba(120,140,170,0.35)" }}
+                  >
+                    <option value="">층고 미상</option>
+                    <option value="lt4">천장 4m 미만</option>
+                    <option value="ge4">천장 4m 이상</option>
+                  </select>
+                </div>
+                {(analysis.roomJudgments ?? []).length === 0 ? (
+                  <p style={{ fontSize: 11.5, opacity: 0.6 }}>추출된 방 판정 없음(벽 레이어 인식 한계 가능).</p>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 5, maxHeight: 260, overflowY: "auto" }}>
+                    {(analysis.roomJudgments ?? []).map((j, i) => (
+                      <div key={`${j.room}-${i}`} style={{ fontSize: 11.5, lineHeight: 1.45, padding: "6px 8px", borderRadius: 6,
+                        background: j.status === "determined" ? "rgba(210,160,60,0.13)" : "rgba(120,140,170,0.1)",
+                        borderLeft: `3px solid ${j.status === "determined" ? "#d2a03c" : "#8fa4c8"}` }}>
+                        <b>{j.room || "—"}</b>{j.area_m2 ? ` · ${j.area_m2}㎡` : ""}
+                        {j.status === "determined" ? <span style={{ opacity: 0.65 }}> · 요구</span> : null}
+                        {j.status === "needs_review" ? <span style={{ opacity: 0.65 }}> · 확인 필요</span> : null}
+                        <div style={{ opacity: 0.85, marginTop: 2 }}>{j.detail || j.reason}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : null}
             <p style={{ fontSize: 11.5, margin: 0, lineHeight: 1.6, padding: "10px 12px", borderRadius: 8, background: "rgba(90,120,180,0.12)", color: "#9fb4d8" }}>
-              <b>NFTC 적정성 판정</b>은 설비 인식·방 면적 자동추출 연결 후 제공됩니다. 지금은 도면에서 <b>확실히 추출되는 사실만</b> 표시합니다.
+              방 면적은 flood-fill로 추출(신뢰 방만). 실 pass/fail 판정엔 <b>구조·층고</b>가 필요(감지면적 기준을 가름) — 미상이면 판정 보류(안전). 배치 확정은 감지기 인식 연결 후.
             </p>
           </section>
         </aside>

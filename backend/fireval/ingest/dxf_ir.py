@@ -85,7 +85,8 @@ def extract_device_objects(doc, scale: float) -> list:
 
 
 def dxf_to_annotation(path: str, structure: str = "fireproof", occupancy: str = "common",
-                      detector_type: str = "smoke_12", drawing_id: str = None) -> DrawingAnnotation:
+                      detector_type: str = "smoke_12", mount_height: float = 3.0,
+                      drawing_id: str = None) -> DrawingAnnotation:
     """DXF/DWG → DrawingAnnotation(룸+문+소방설비). check_drawing 에 바로 투입 가능."""
     bm = DL.load(path, structure=structure, occupancy=occupancy)
     doc = DL._open_doc(path)
@@ -110,7 +111,7 @@ def dxf_to_annotation(path: str, structure: str = "fireproof", occupancy: str = 
         drawing_id=drawing_id or os.path.splitext(os.path.basename(path))[0],
         source_file=path, units_scale=scale,
         building_meta={"structure": structure, "occupancy": occupancy,
-                       "detector_type": detector_type},
+                       "detector_type": detector_type, "mount_height": mount_height},
         objects=objs, label_provenance="model_pred")
 
 
