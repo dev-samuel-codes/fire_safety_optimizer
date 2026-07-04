@@ -142,6 +142,31 @@ def detector_requirement(name: str, area_m2: float, *, occupancy: str = "",
                       f"열 {heat_str}개(차동식2종~정온식2종) — 확정하려면 감지기 인식 필요"}
 
 
+def judge_rooms(rooms, *, occupancy="", structure=None, mount_height=3.0):
+    """추출된 방 리스트 → 방별 NFTC 요구 판정 (① 파이프라인 연결점).
+
+    rooms: [{"name","area_m2","reliable",...}] = room_extract_raster.extract_rooms_raster 출력.
+    안전 규칙(위반 은폐=false-pass 방지):
+      · reliable=False(면적 붕괴/병합 의심) → needs_review.
+      · structure 미상(None) → needs_review — 기타구조를 내화로 가정하면 열 과소계산(위험방향).
+      · 그 외 → detector_requirement (2.4.2 종류확정 방은 N, 미확정 방은 조건부 N).
+    """
+    out = []
+    for r in rooms:
+        name = r.get("name", "")
+        area = float(r.get("area_m2", 0.0) or 0.0)
+        if not r.get("reliable", False):
+            out.append({"room": name, "status": "needs_review", "area_m2": round(area, 1),
+                        "reason": "면적 신뢰도 낮음(추출 불안정·병합/붕괴 의심)"})
+        elif structure not in ("fireproof", "noncombustible", "other"):
+            out.append({"room": name, "status": "needs_review", "area_m2": round(area, 1),
+                        "reason": "건물 구조(내화/기타) 미상 — 열 감지기 과소계산 위험방향"})
+        else:
+            out.append(detector_requirement(name, area, occupancy=occupancy,
+                                            structure=structure, mount_height=mount_height))
+    return out
+
+
 if __name__ == "__main__":   # 데모(어린이집·창고 실명)
     demo = [
         ("계단실", "교육연구시설", None), ("복도", "교육연구시설", 45.0),

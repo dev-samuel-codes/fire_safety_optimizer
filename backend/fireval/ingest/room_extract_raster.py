@@ -94,3 +94,37 @@ def extract_rooms_raster(wall_segments, room_labels, mm_per_px=25.0,
         out.append({"name": name, "area_m2": round(med, 1), "confidence": conf,
                     "reliable": conf >= 0.6, "merged": merged})
     return out
+
+
+_ROOM_NAME_KEYWORDS = ("보육", "유희", "놀이", "조리", "교사", "사무", "원장", "화장", "복도",
+                       "계단", "현관", "회의", "강의", "다목적", "세탁", "기계", "창고", "샤워",
+                       "주방", "숙소", "침실", "객실", "병실", "입원", "교재", "관리", "휴게", "식당")
+
+
+def rooms_from_dxf(doc, wall_layers, *, room_layers=None, mm_per_px=25.0, **kw):
+    """dxf 문서 + 벽 레이어 → 방(name·area·confidence) 리스트.
+
+    ⚠ 벽 레이어 선택은 도면마다 다르다(ARCH / WAL2+WAL+COL …) → 호출측이 지정한다.
+       자동 선택 휴리스틱은 아직 견고하지 않음(별도 과제). 실명은 TEXT/MTEXT에서 추출.
+    """
+    msp = doc.modelspace()
+    wall_set = set(wall_layers)
+    segs = []
+    for e in msp.query("LINE"):
+        if e.dxf.layer in wall_set:
+            a, b = e.dxf.start, e.dxf.end
+            segs.append((a.x, a.y, b.x, b.y))
+    room_set = set(room_layers) if room_layers else None
+    labels = []
+    for e in msp:
+        if e.dxftype() not in ("TEXT", "MTEXT"):
+            continue
+        if room_set is not None and e.dxf.layer not in room_set:
+            continue
+        try:
+            t = (e.plain_text() if e.dxftype() == "MTEXT" else e.dxf.text).strip()
+        except Exception:
+            continue
+        if 2 <= len(t) <= 12 and any(k in t for k in _ROOM_NAME_KEYWORDS):
+            labels.append((t, (e.dxf.insert.x, e.dxf.insert.y)))
+    return extract_rooms_raster(segs, labels, mm_per_px=mm_per_px, **kw)
