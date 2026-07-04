@@ -1,14 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type PointerEvent } from "react";
 import { CadFileViewer } from "./components/CadFileViewer";
-import {
-  conflicts,
-  initialLayers,
-  recommendations,
-} from "./data/projectData";
-import type { LayerId, Severity } from "./types";
+import type { LayerId } from "./types";
 
-type ConflictFilter = "전체" | Severity;
-type ToolId = "select" | "pan" | "rotate" | "measure" | "zoomIn" | "zoomOut" | "fit" | "layers";
+// CAD 뷰어는 도면 자체의 레이어 가시성으로 렌더 — 앱 레이어 필터는 미연결(PART B 예정)
+const NO_VISIBLE_LAYERS = new Set<LayerId>();
+
+type ToolId = "pan" | "zoomIn" | "zoomOut" | "fit";
 type DialogType = "save" | "report" | "export" | "notifications" | null;
 type PanOffset = { x: number; y: number };
 type DragState = PanOffset & { pointerId: number; startX: number; startY: number };
@@ -19,14 +16,10 @@ const zoomWheelStep = 10;
 const uploadedDrawingInitialZoom = 150;
 
 const toolDefinitions: Array<{ id: ToolId; label: string; icon: string; command: string }> = [
-  { id: "select", label: "선택", icon: "cursor", command: "SELECT" },
   { id: "pan", label: "이동", icon: "move", command: "PAN" },
-  { id: "rotate", label: "회전", icon: "rotate", command: "ROTATE" },
-  { id: "measure", label: "측정", icon: "ruler", command: "DIST" },
   { id: "zoomIn", label: "확대", icon: "zoomIn", command: "ZOOM +" },
   { id: "zoomOut", label: "축소", icon: "zoomOut", command: "ZOOM -" },
   { id: "fit", label: "맞춤", icon: "fit", command: "ZOOM EXTENTS" },
-  { id: "layers", label: "층 선택", icon: "layers", command: "LAYER" },
 ];
 
 const navItems = [
@@ -39,54 +32,57 @@ const navItems = [
 ];
 
 export function App() {
-  const [layers, setLayers] = useState(initialLayers);
-  const [opacity, setOpacity] = useState(68);
-  const [filter, setFilter] = useState<ConflictFilter>("전체");
-  const [tab, setTab] = useState<"result" | "collisions">("result");
-  const [applied, setApplied] = useState(false);
-  const [toast, setToast] = useState("분석 완료");
+  const [toast, setToast] = useState("대기 중 · 도면을 업로드해주세요");
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
-  const [activeTool, setActiveTool] = useState<ToolId>("select");
+  const [activeTool, setActiveTool] = useState<ToolId>("pan");
   const [zoomLevel, setZoomLevel] = useState(100);
   const [panOffset, setPanOffset] = useState<PanOffset>({ x: 0, y: 0 });
   const [dragState, setDragState] = useState<DragState | null>(null);
-  const [layoutTab, setLayoutTab] = useState("Model");
-  const [commandLine, setCommandLine] = useState("명령: SELECT");
-  const [commandInput, setCommandInput] = useState("");
   const [dialog, setDialog] = useState<DialogType>(null);
-  const [draftSaved, setDraftSaved] = useState(false);
-  const [cadToggles, setCadToggles] = useState({
-    grid: true,
-    snap: true,
-    ortho: false,
-    osnap: true,
-  });
   const drawingCardRef = useRef<HTMLDivElement | null>(null);
   const zoomLevelRef = useRef(zoomLevel);
 
-  const visibleLayerIds = useMemo(
-    () => new Set(layers.filter((layer) => layer.visible).map((layer) => layer.id)),
-    [layers],
-  );
+  // ── 백엔드(FireVal/FireOpt 엔진) 실시간 연결: POST /api/analyze ──
+  const [analysis, setAnalysis] = useState<{
+    drawingInfo?: {
+      fileName?: string; layerCount?: number; entityCount?: number;
+      fireLayers?: string[]; roomNames?: string[]; error?: string;
+    } | null;
+  }>({ drawingInfo: null });
 
-  const filteredConflicts = useMemo(() => {
-    if (filter === "전체") {
-      return conflicts;
+  // 업로드 파일이 있으면 FormData로 전송 → 백엔드가 그 도면의 실제 정보(drawingInfo) 반환
+  const runAnalysis = useCallback((file?: File) => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 30000);
+    const options: RequestInit = { method: "POST", signal: controller.signal };
+    if (file) {
+      const form = new FormData();
+      form.append("file", file);
+      options.body = form;
     }
-    return conflicts.filter((conflict) => conflict.severity === filter);
-  }, [filter]);
-
-  const severeCount = conflicts.filter((conflict) => conflict.severity === "심각").length;
-  const warningCount = conflicts.filter((conflict) => conflict.severity === "경고").length;
-  const resolvedCount = applied ? 6 : 4;
-
-  const toggleLayer = (layerId: LayerId) => {
-    setLayers((current) =>
-      current.map((layer) =>
-        layer.id === layerId ? { ...layer, visible: !layer.visible } : layer,
-      ),
-    );
-  };
+    fetch("/api/analyze", options)
+      .then((res) => {
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}`);
+        }
+        return res.json();
+      })
+      .then((d) => {
+        setAnalysis({ drawingInfo: d.drawingInfo ?? null });
+        if (file) {
+          setToast(d.drawingInfo?.error ? `추출 실패: ${d.drawingInfo.error}` : `${file.name} 분석 완료`);
+        }
+      })
+      .catch((err) => {
+        setToast(err?.name === "AbortError"
+          ? "도면 분석 시간 초과 (30초) — 백엔드 상태를 확인해주세요"
+          : "백엔드 연결 실패 — 서버 상태를 확인해주세요");
+      })
+      .finally(() => clearTimeout(timer));
+  }, []);
+  useEffect(() => {
+    runAnalysis();
+  }, [runAnalysis]);
 
   const updateStatus = useCallback((message: string) => {
     setToast(message);
@@ -98,14 +94,11 @@ export function App() {
 
   const openDialog = (nextDialog: Exclude<DialogType, null>) => {
     setDialog(nextDialog);
-    setCommandLine(`명령: ${dialogCommand(nextDialog)}`);
   };
 
   const handleTopAction = (action: Exclude<DialogType, null>) => {
     if (action === "save") {
-      setDraftSaved(true);
-      setToast("현재 도면 검토 상태를 저장했습니다.");
-      setCommandLine("명령: QSAVE");
+      setToast("저장 기능은 준비 중입니다.");
       return;
     }
 
@@ -116,14 +109,8 @@ export function App() {
     setUploadedFile(file);
     setZoomLevel((current) => Math.max(current, uploadedDrawingInitialZoom));
     setPanOffset({ x: 0, y: 0 });
-    setToast(`${file.name} 파일을 불러오는 중입니다.`);
-    setCommandLine(`명령: OPEN ${file.name}`);
-  };
-
-  const applyRecommendation = () => {
-    setApplied(true);
-    setToast("권장 대안을 적용했습니다. 충돌 해결 가능 수치가 갱신되었습니다.");
-    setCommandLine("명령: OPTIMIZE APPLY");
+    setToast(`${file.name} 분석 중… (도면 정보 추출)`);
+    runAnalysis(file);
   };
 
   const handleToolAction = (toolId: ToolId) => {
@@ -143,7 +130,6 @@ export function App() {
       setActiveTool(toolId);
     }
 
-    setCommandLine(`명령: ${tool.command}`);
     setToast(`${tool.label} 도구가 활성화되었습니다.`);
   };
 
@@ -161,7 +147,6 @@ export function App() {
     zoomLevelRef.current = nextZoom;
     setPanOffset((currentPan) => getCursorAnchoredPanOffset(currentPan, cursorOffset, zoomRatio));
     setZoomLevel(nextZoom);
-    setCommandLine(event.deltaY < 0 ? "명령: ZOOM WHEEL +" : "명령: ZOOM WHEEL -");
   }, []);
 
   useEffect(() => {
@@ -189,7 +174,6 @@ export function App() {
       y: panOffset.y,
     });
     setActiveTool("pan");
-    setCommandLine("명령: PAN");
   };
 
   const handleDrawingPointerMove = (event: PointerEvent<HTMLDivElement>) => {
@@ -218,48 +202,10 @@ export function App() {
     }
   };
 
-  const runCommand = () => {
-    const value = commandInput.trim();
-    if (!value) {
-      return;
-    }
-
-    const normalized = value.toUpperCase();
-    setCommandInput("");
-    setCommandLine(`명령: ${normalized}`);
-
-    if (normalized === "ZOOM" || normalized === "Z") {
-      setZoomLevel(125);
-      setToast("ZOOM 명령을 실행했습니다.");
-      return;
-    }
-
-    if (normalized === "EXTENTS" || normalized === "ZE") {
-      setZoomLevel(100);
-      setPanOffset({ x: 0, y: 0 });
-      setToast("도면 범위를 화면에 맞췄습니다.");
-      return;
-    }
-
-    if (normalized === "LAYER" || normalized === "LA") {
-      setActiveTool("layers");
-      setToast("레이어 패널을 활성화했습니다.");
-      return;
-    }
-
-    setToast(`${normalized} 명령을 기록했습니다.`);
-  };
-
-  const toggleCadOption = (key: keyof typeof cadToggles) => {
-    setCadToggles((current) => ({ ...current, [key]: !current[key] }));
-    setCommandLine(`명령: ${key.toUpperCase()}`);
-  };
-
   return (
     <main className="app-shell">
       <TopBar
         selectedFileName={uploadedFile?.name}
-        draftSaved={draftSaved}
         onTopAction={handleTopAction}
       />
       <div className="workspace">
@@ -275,7 +221,7 @@ export function App() {
                 파일 추가
                 <input
                   type="file"
-                  accept=".dwg,.dxf,.dwf,.dwfx,.xps"
+                  accept=".dwg,.dxf"
                   onChange={(event) => {
                     const file = event.target.files?.[0];
                     if (file) {
@@ -295,51 +241,43 @@ export function App() {
                     <strong>{uploadedFile.name}</strong>
                     <small>{formatFileSize(uploadedFile.size)} · 업로드됨</small>
                   </span>
-                  <em>렌더링</em>
+                  <em>표시됨</em>
                 </button>
               ) : null}
             </div>
-          </section>
-
-          <section className="panel-block compact">
-            <div className="panel-heading inline">
-              <h3>도면 레이어</h3>
-              <Icon name="layers" />
-            </div>
-            <div className="layer-list">
-              {layers.map((layer) => (
-                <label key={layer.id} className="layer-row">
-                  <input
-                    type="checkbox"
-                    checked={layer.visible}
-                    onChange={() => toggleLayer(layer.id)}
-                  />
-                  <span>{layer.label}</span>
-                  <i style={{ backgroundColor: layer.color }} />
-                </label>
-              ))}
+            <div className="upload-guide">
+              <strong>권장 도면 조건</strong>
+              <ul>
+                <li><b>건축 평면도</b>(벽 위주) — 가구·집기·설비 배관이 <b>없을수록</b> 방·면적 자동추출이 정확합니다</li>
+                <li>방 이름이 <b>문자(텍스트)</b>로 표기</li>
+                <li>소방 설비(감지기·스프링클러)가 <b>레이어로 구분</b></li>
+                <li><b>1개 층</b> 평면 · DWG 또는 DXF</li>
+              </ul>
+              <p>※ 가구가 섞이면 작은 방이 잘게 쪼개져 면적 추출이 부정확해집니다.</p>
             </div>
           </section>
 
-          <section className="panel-block compact">
-            <label className="range-row">
-              <span>투명도</span>
-              <input
-                type="range"
-                min="20"
-                max="100"
-                value={opacity}
-                onChange={(event) => setOpacity(Number(event.target.value))}
-              />
-            </label>
-          </section>
+          {analysis.drawingInfo ? (
+            <section className="panel-block compact">
+              <div className="panel-heading inline">
+                <h3>도면 정보</h3>
+                <Icon name="layers" />
+              </div>
+              {analysis.drawingInfo.error ? (
+                <p style={{ fontSize: 12.5, opacity: 0.7, padding: "4px" }}>{analysis.drawingInfo.error}</p>
+              ) : (
+                <div style={{ fontSize: 12.5, lineHeight: 1.7, padding: "2px 4px" }}>
+                  <div>레이어 <b>{analysis.drawingInfo.layerCount}</b> · 요소 <b>{analysis.drawingInfo.entityCount?.toLocaleString()}</b></div>
+                  <div style={{ marginTop: 6, opacity: 0.85 }}>소방 레이어: {(analysis.drawingInfo.fireLayers ?? []).slice(0, 6).join(", ") || "—"}</div>
+                  <div style={{ marginTop: 6, opacity: 0.85 }}>실명: {(analysis.drawingInfo.roomNames ?? []).slice(0, 8).join(", ") || "—"}</div>
+                </div>
+              )}
+            </section>
+          ) : null}
         </aside>
 
         <section className="canvas-panel">
           <Toolbar activeTool={activeTool} onToolAction={handleToolAction} />
-          <div className="floor-controls">
-            <button className="floor-select">1F <Icon name="chevron" /></button>
-          </div>
           <div
             ref={drawingCardRef}
             className={`drawing-card autocad-space tool-${activeTool} ${dragState ? "is-panning" : ""}`}
@@ -351,135 +289,52 @@ export function App() {
             {uploadedFile ? (
               <CadFileViewer
                 file={uploadedFile}
-                visibleLayerIds={visibleLayerIds}
-                opacity={opacity}
+                visibleLayerIds={NO_VISIBLE_LAYERS}
+                opacity={100}
                 zoomLevel={zoomLevel}
                 panOffset={panOffset}
                 onStatusChange={updateStatus}
               />
             ) : null}
-            {cadToggles.grid ? <div className="model-grid-overlay" aria-hidden="true" /> : null}
-            <div className="cad-crosshair" aria-hidden="true" />
-            <div className="ucs-widget" aria-label="UCS 축 표시">
-              <span className="ucs-y">Y</span>
-              <span className="ucs-x">X</span>
-            </div>
-            <div className="layout-tabs" aria-label="도면 레이아웃">
-              {["Model", "Layout1", "Layout2"].map((item) => (
-                <button
-                  key={item}
-                  className={layoutTab === item ? "active" : ""}
-                  onClick={() => {
-                    setLayoutTab(item);
-                    setCommandLine(`명령: ${item.toUpperCase()}`);
-                  }}
-                >
-                  {item}
-                </button>
-              ))}
-            </div>
-            <form
-              className="command-line"
-              onSubmit={(event) => {
-                event.preventDefault();
-                runCommand();
-              }}
-            >
-              <span>{commandLine}</span>
-              <input
-                value={commandInput}
-                placeholder="명령 입력"
-                onChange={(event) => setCommandInput(event.target.value)}
-              />
-            </form>
-            <div className="cad-status-toggles">
-              <button className={cadToggles.grid ? "on" : ""} onClick={() => toggleCadOption("grid")}>GRID</button>
-              <button className={cadToggles.snap ? "on" : ""} onClick={() => toggleCadOption("snap")}>SNAP</button>
-              <button className={cadToggles.ortho ? "on" : ""} onClick={() => toggleCadOption("ortho")}>ORTHO</button>
-              <button className={cadToggles.osnap ? "on" : ""} onClick={() => toggleCadOption("osnap")}>OSNAP</button>
-              <strong>{zoomLevel}%</strong>
-            </div>
           </div>
         </section>
 
         <aside className="right-panel">
           <section className="analysis-panel">
-            <div className="tabs">
-              <button className={tab === "result" ? "active" : ""} onClick={() => setTab("result")}>
-                분석 결과
-              </button>
-              <button className={tab === "collisions" ? "active" : ""} onClick={() => setTab("collisions")}>
-                충돌 감지 <strong>{conflicts.length + 2}</strong>
-              </button>
-            </div>
-
-            <div className="metric-grid">
-              <article>
-                <span>총 충돌</span>
-                <b>{conflicts.length + 2}<small>건</small></b>
-                <p>심각: {severeCount + 1} <i /> 경고: {warningCount + 1}</p>
-              </article>
-              <article className="success">
-                <span>해결 가능</span>
-                <b>{resolvedCount}<small>건</small></b>
-                <p>{applied ? "100%" : "67%"}</p>
-              </article>
-            </div>
-
             <div className="list-header">
-              <h3>충돌 목록</h3>
-              <select value={filter} onChange={(event) => setFilter(event.target.value as ConflictFilter)}>
-                <option>전체</option>
-                <option>심각</option>
-                <option>경고</option>
-              </select>
+              <h3>법규 판정 (NFTC)</h3>
+              <span style={{ fontSize: 12, opacity: 0.7 }}>판정 엔진: 준비 중</span>
             </div>
-            <div className="conflict-list">
-              {filteredConflicts.map((conflict) => (
-                <article key={conflict.id} className="conflict-card">
-                  <div>
-                    <span className={`severity ${conflict.tone}`}>{conflict.severity}</span>
-                    <strong>{conflict.title}</strong>
-                    <p>위치: {conflict.location}</p>
-                    <p>높이: {conflict.height}</p>
-                  </div>
-                  <CollisionThumb tone={conflict.tone} />
-                </article>
-              ))}
-            </div>
-            <button
-              className="text-link"
-              onClick={() => {
-                setTab("collisions");
-                setFilter("전체");
-                setToast("전체 충돌 목록을 표시했습니다.");
-                setCommandLine("명령: COLLISION LIST");
-              }}
-            >
-              모든 충돌 보기 <Icon name="arrow" />
-            </button>
-          </section>
-
-          <section className="recommend-panel">
-            <h3>최적화 제안</h3>
-            {recommendations.map((item) => (
-              <article key={item.id} className={`recommend-card ${item.recommended ? "recommended" : ""}`}>
-                <div className="recommend-title">
-                  <strong>{item.title}{item.recommended ? " (권장)" : ""}</strong>
-                  {item.recommended ? <span>비용 절감</span> : <Icon name="chevron" />}
+            {analysis.drawingInfo && !analysis.drawingInfo.error ? (
+              <div style={{ marginBottom: 12 }}>
+                <p style={{ fontSize: 12.5, margin: "0 0 8px", lineHeight: 1.6 }}>
+                  업로드 도면에서 추출한 <b>실제 사실</b>
+                </p>
+                <div style={{ fontSize: 12, opacity: 0.85, margin: "0 0 5px" }}>
+                  방 {analysis.drawingInfo.roomNames?.length ?? 0}개
                 </div>
-                <p>{item.summary}</p>
-                <div className="saving">
-                  <small>예상 비용 절감</small>
-                  <b>{item.saving}</b>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginBottom: 10 }}>
+                  {(analysis.drawingInfo.roomNames ?? []).map((r) => (
+                    <span key={r} style={{ fontSize: 11.5, padding: "3px 8px", borderRadius: 6, background: "rgba(120,140,170,0.18)" }}>{r}</span>
+                  ))}
                 </div>
-                {item.recommended ? (
-                  <button className="apply-button" onClick={applyRecommendation}>
-                    적용하기
-                  </button>
-                ) : null}
-              </article>
-            ))}
+                <div style={{ fontSize: 12, opacity: 0.85, margin: "0 0 5px" }}>
+                  소방 설비 레이어 {analysis.drawingInfo.fireLayers?.length ?? 0}개
+                </div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+                  {(analysis.drawingInfo.fireLayers ?? []).slice(0, 8).map((l) => (
+                    <span key={l} style={{ fontSize: 11, padding: "3px 8px", borderRadius: 6, background: "rgba(210,80,80,0.16)", color: "#e79b9b" }}>{l}</span>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <p style={{ fontSize: 12.5, margin: "0 0 12px", lineHeight: 1.6, opacity: 0.7 }}>
+                도면을 업로드하면 이 도면의 방·소방 설비를 추출합니다.
+              </p>
+            )}
+            <p style={{ fontSize: 11.5, margin: 0, lineHeight: 1.6, padding: "10px 12px", borderRadius: 8, background: "rgba(90,120,180,0.12)", color: "#9fb4d8" }}>
+              <b>NFTC 적정성 판정</b>은 설비 인식·방 면적 자동추출 연결 후 제공됩니다. 지금은 도면에서 <b>확실히 추출되는 사실만</b> 표시합니다.
+            </p>
           </section>
         </aside>
       </div>
@@ -487,18 +342,15 @@ export function App() {
       <footer className="status-bar">
         <span className="status-dot" />
         <strong>상태: {toast}</strong>
-        <span>스프링클러 <b>52</b></span>
-        <span>감지기 <b>38</b></span>
-        <span>소화기 <b>6</b></span>
-        <span>소화전 <b>2</b></span>
-        <span>피난구 <b>3</b></span>
-        <em><Icon name="shield" /> 한국 소방법 (NFSC) 기준 적용 중</em>
+        {analysis.drawingInfo && !analysis.drawingInfo.error ? (
+          <span>추출: 방 <b>{analysis.drawingInfo.roomNames?.length ?? 0}</b>개 · 소방레이어 <b>{analysis.drawingInfo.fireLayers?.length ?? 0}</b></span>
+        ) : null}
+        <em><Icon name="shield" /> 한국 화재안전기술기준 (NFTC) · FireVal 엔진</em>
       </footer>
       <ActionDialog
         dialog={dialog}
         fileName={uploadedFile?.name ?? "선택된 도면 없음"}
-        resolvedCount={resolvedCount}
-        conflictCount={conflicts.length + 2}
+        drawingInfo={analysis.drawingInfo ?? null}
         onClose={() => setDialog(null)}
       />
     </main>
@@ -507,11 +359,9 @@ export function App() {
 
 function TopBar({
   selectedFileName,
-  draftSaved,
   onTopAction,
 }: {
   selectedFileName?: string;
-  draftSaved: boolean;
   onTopAction: (action: Exclude<DialogType, null>) => void;
 }) {
   return (
@@ -523,7 +373,7 @@ function TopBar({
           <p>소방 설계 자동 최적화 시스템</p>
         </div>
       </div>
-      <button className="project-select">
+      <button className="project-select" disabled title="프로젝트 선택 — 준비 중">
         프로젝트_샘플 <Icon name="chevron" />
       </button>
       <div className="file-pill">
@@ -531,9 +381,7 @@ function TopBar({
         <span>{selectedFileName ?? "도면 파일을 선택해주세요"}</span>
       </div>
       <nav className="top-actions">
-        <button className={draftSaved ? "saved" : ""} onClick={() => onTopAction("save")}>
-          {draftSaved ? "저장됨" : "저장"}
-        </button>
+        <button onClick={() => onTopAction("save")}>저장</button>
         <button onClick={() => onTopAction("report")}>보고서</button>
         <button className="export" onClick={() => onTopAction("export")}>내보내기</button>
         <button className="round" aria-label="알림" onClick={() => onTopAction("notifications")}><Icon name="bell" /></button>
@@ -584,42 +432,62 @@ function getCursorAnchoredPanOffset(
 
 function isInteractiveDrawingTarget(target: EventTarget) {
   return target instanceof Element
-    && Boolean(target.closest("button, input, select, textarea, label, .command-line, .layout-tabs, .cad-status-toggles"));
-}
-
-function dialogCommand(dialog: Exclude<DialogType, null>) {
-  const commands = {
-    save: "QSAVE",
-    report: "REPORT PREVIEW",
-    export: "EXPORT",
-    notifications: "NOTIFICATIONCENTER",
-  };
-
-  return commands[dialog];
+    && Boolean(target.closest("button, input, select, textarea, label"));
 }
 
 function ActionDialog({
   dialog,
   fileName,
-  resolvedCount,
-  conflictCount,
+  drawingInfo,
   onClose,
 }: {
   dialog: DialogType;
   fileName: string;
-  resolvedCount: number;
-  conflictCount: number;
+  drawingInfo: {
+    fileName?: string; layerCount?: number; entityCount?: number;
+    fireLayers?: string[]; roomNames?: string[]; error?: string;
+  } | null;
   onClose: () => void;
 }) {
-  const [exportFormat, setExportFormat] = useState("PDF");
+  const rooms = drawingInfo?.roomNames ?? [];
+  const fireLayers = drawingInfo?.fireLayers ?? [];
+  const hasFacts = Boolean(drawingInfo && !drawingInfo.error);
+
+  // 도면에서 자동 추출한 '사실'만 담은 마크다운(가짜 판정 없음).
+  const factsMarkdown = [
+    `# 소방 도면 사실 요약 — ${drawingInfo?.fileName ?? fileName}`,
+    ``,
+    hasFacts ? `- 레이어: ${drawingInfo?.layerCount ?? "-"}개` : `- (업로드된 도면 없음 또는 파싱 실패)`,
+    ...(hasFacts ? [`- 도형 요소: ${(drawingInfo?.entityCount ?? 0).toLocaleString()}개`] : []),
+    ``,
+    `## 추출된 방 (${rooms.length})`,
+    ...rooms.map((r) => `- ${r}`),
+    ``,
+    `## 소방 설비 레이어 (${fireLayers.length})`,
+    ...fireLayers.map((l) => `- ${l}`),
+    ``,
+    `---`,
+    `※ NFTC 적정성 판정(방별 필요 감지기 수)은 설비 심볼 인식·방 면적 자동추출 연결 후 제공됩니다.`,
+    `   본 문서는 도면에서 자동 추출한 '사실'만 담습니다.`,
+  ].join("\n");
+
+  const downloadFacts = () => {
+    const blob = new Blob([factsMarkdown], { type: "text/markdown;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = "소방도면_사실요약.md";
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
 
   if (!dialog || dialog === "save") {
     return null;
   }
 
   const title = {
-    report: "보고서 미리보기",
-    export: "도면 내보내기",
+    report: "도면 사실 요약",
+    export: "내보내기",
     notifications: "알림 센터",
   }[dialog];
 
@@ -646,51 +514,37 @@ function ActionDialog({
           <div className="dialog-content">
             <div className="report-summary">
               <article>
-                <span>검토 도면</span>
+                <span>도면</span>
                 <strong>{fileName}</strong>
               </article>
               <article>
-                <span>충돌 감지</span>
-                <strong>{conflictCount}건</strong>
+                <span>추출된 방</span>
+                <strong>{rooms.length}개</strong>
               </article>
               <article>
-                <span>해결 가능</span>
-                <strong>{resolvedCount}건</strong>
+                <span>소방 레이어</span>
+                <strong>{fireLayers.length}개</strong>
               </article>
             </div>
             <div className="report-sheet">
-              <h3>소방 설계 검토 보고서</h3>
-              <p>NFSC 기준과 도면 레이어 충돌 결과를 기준으로 요약했습니다.</p>
-              <ul>
-                <li>스프링클러 배치 간섭 및 배관 우회 권장안 포함</li>
-                <li>감지기, 소화전, 피난구 레이어 표시 상태 반영</li>
-                <li>비용 절감 예상치와 우선 조치 항목 분리</li>
-              </ul>
+              <h3>소방 도면 사실 요약</h3>
+              <pre style={{ whiteSpace: "pre-wrap", fontSize: 12, lineHeight: 1.6, margin: 0, maxHeight: 300, overflow: "auto", fontFamily: "inherit" }}>
+                {factsMarkdown}
+              </pre>
+              <p style={{ fontSize: 11.5, opacity: 0.6, marginTop: 8 }}>※ 도면에서 자동 추출한 사실 · NFTC 적정성 판정은 인식 파이프라인 연결 후</p>
             </div>
-            <button className="dialog-primary" onClick={onClose}>미리보기 닫기</button>
+            <button className="dialog-primary" onClick={downloadFacts}>사실 요약 다운로드 (.md)</button>
           </div>
         ) : null}
 
         {dialog === "export" ? (
           <div className="dialog-content">
-            <div className="export-options" role="radiogroup" aria-label="내보내기 형식">
-              {["PDF", "DWG", "DXF"].map((format) => (
-                <button
-                  key={format}
-                  className={exportFormat === format ? "selected" : ""}
-                  onClick={() => setExportFormat(format)}
-                >
-                  <strong>{format}</strong>
-                  <span>{format === "PDF" ? "검토 보고서" : "도면 파일"}</span>
-                </button>
-              ))}
-            </div>
             <div className="export-panel">
-              <span>대상 파일</span>
-              <strong>{fileName}</strong>
-              <p>{exportFormat} 형식으로 내보낼 준비가 되었습니다.</p>
+              <span>내보내기 가능</span>
+              <strong>소방 도면 사실 요약 (.md)</strong>
+              <p>도면에서 추출한 방·소방 설비 레이어 목록을 파일로 저장합니다. (도면 DWG/DXF 주석 내보내기, NFTC 판정서는 준비 중)</p>
             </div>
-            <button className="dialog-primary" onClick={onClose}>{exportFormat} 내보내기 준비</button>
+            <button className="dialog-primary" onClick={downloadFacts}>사실 요약 다운로드 (.md)</button>
           </div>
         ) : null}
 
@@ -698,16 +552,16 @@ function ActionDialog({
           <div className="dialog-content">
             <div className="notification-list">
               <article>
-                <strong>도면 렌더링 상태</strong>
-                <p>업로드된 CAD 파일은 로컬 브라우저에서 미리보기 렌더링됩니다.</p>
+                <strong>도면 렌더링</strong>
+                <p>업로드된 CAD 파일은 브라우저에서 미리보기 렌더링됩니다.</p>
               </article>
               <article>
-                <strong>충돌 분석 업데이트</strong>
-                <p>스프링클러 배관 우회안 적용 시 해결 가능 항목이 갱신됩니다.</p>
+                <strong>사실 추출</strong>
+                <p>백엔드가 도면에서 레이어·소방 설비 레이어·실명을 추출합니다.</p>
               </article>
               <article>
-                <strong>NFSC 기준</strong>
-                <p>현재 프로젝트는 한국 소방법 기준 모드로 표시 중입니다.</p>
+                <strong>NFTC 판정 (준비 중)</strong>
+                <p>방별 적정성 판정은 설비 심볼 인식·방 면적 자동추출 연결 후 제공됩니다.</p>
               </article>
             </div>
           </div>
@@ -721,7 +575,12 @@ function SideNav() {
   return (
     <nav className="sidenav" aria-label="주요 메뉴">
       {navItems.map((item) => (
-        <button key={item.label} className={item.active ? "active" : ""}>
+        <button
+          key={item.label}
+          className={item.active ? "active" : ""}
+          disabled={!item.active}
+          title={item.active ? undefined : "준비 중"}
+        >
           <Icon name={item.icon} />
           <span>{item.label}</span>
         </button>
@@ -750,18 +609,6 @@ function Toolbar({
         </button>
       ))}
     </div>
-  );
-}
-
-function CollisionThumb({ tone }: { tone: "danger" | "warning" }) {
-  return (
-    <svg className="collision-thumb" viewBox="0 0 90 70" aria-hidden="true">
-      <rect x="7" y="10" width="72" height="48" rx="4" fill="#0f1b28" stroke="#32445a" />
-      <path d="M14 48L72 18M14 32L72 58" stroke={tone === "danger" ? "#ef4444" : "#f59e0b"} strokeWidth="3" />
-      <path d="M20 54H76V25" fill="none" stroke="#43566c" />
-      <circle cx="56" cy="35" r="8" fill="none" stroke={tone === "danger" ? "#ef4444" : "#f59e0b"} strokeWidth="2" />
-      <path d="M56 25v20M46 35h20" stroke={tone === "danger" ? "#ef4444" : "#f59e0b"} strokeWidth="1.8" />
-    </svg>
   );
 }
 

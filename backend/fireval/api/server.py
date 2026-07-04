@@ -2,33 +2,31 @@
 """
 server — FireVal/FireOpt 엔진을 HTTP API로 노출(프론트엔드 통합점).
 
-fire_safety_optimizer(React) 프론트가 이 엔드포인트를 호출해 목업 데이터를
-실제 엔진 출력으로 교체한다. 계약: INTEGRATION.md.
+fire_safety_optimizer(React) 프론트가 이 엔드포인트를 호출한다. 계약: INTEGRATION.md.
 
     ./.venv/bin/python -m fireval.api.server        # http://127.0.0.1:8900
 
+정직성 원칙:
+  업로드 도면의 NFTC 적정성 판정(방별 필요 감지기 수)은 설비 심볼 인식 + 방 면적
+  추출(R³의 Recognize 단계)이 필요하다. 이건 아직 신뢰 가능한 수준으로 연결되지
+  않았다(실제 도면엔 방 경계 폴리라인/면적표기가 없고, FIRE 레이어 심볼 카운트는
+  노이즈가 커서 그대로 세면 과다 집계된다). 따라서 **가짜 판정을 내보내지 않는다.**
+  업로드 도면에서 '확실히 추출되는 사실'(레이어·엔티티·소방 레이어·실명)만 반환한다.
+
 지금 구현:
   · /api/health                    엔진 생존 확인
-  · /api/analyze  (POST)           엔진 판정 → 프론트 호환 JSON
-      - file 업로드 시: DXF 레이어 요약(실제)
-      - 판정(violations): FireVal 규칙엔진 실제 출력(데모 도면 or 향후 인식→방추출 연결)
-TODO(계약 유지하며 내부만 확장): 업로드 파일 → 인식(설비)+방추출 → DrawingAnnotation → check_drawing.
+  · /api/analyze  (POST)           업로드 도면의 실제 사실(drawingInfo). 판정은 미연결(정직).
 """
 from __future__ import annotations
 
-import io
 import os
+import shutil
 
 from flask import Flask, request, jsonify
-from shapely.geometry import Polygon
 
-from ..engine.checks import _Room, check_layout, summarize
-from ..schema.rules import RULE_CATALOG, by_id
+from ..schema.rules import RULE_CATALOG
 
 app = Flask(__name__)
-
-_SEV_KR = {"critical": "심각", "major": "경고", "minor": "주의", "info": "정보"}
-_TONE = {"critical": "danger", "major": "warning", "minor": "warning", "info": "warning"}
 
 
 @app.after_request
@@ -45,31 +43,65 @@ def health():
     return jsonify({"status": "ok", "engine": "FireVal+FireOpt", "rules": len(RULE_CATALOG)})
 
 
-def _demo_scene():
-    """데모 도면: 교육시설 3층 — 강당(연기 부족)·기계실(열 부족)·강의실(적합).
-    실제로는 업로드 도면 → 인식+방추출로 생성될 부분(계약은 동일)."""
-    rooms = [_Room("강당", Polygon([(0, 0), (24, 0), (24, 20), (0, 20)])),
-             _Room("기계실", Polygon([(26, 0), (42, 0), (42, 15), (26, 15)])),
-             _Room("강의실", Polygon([(0, 22), (12, 22), (12, 31), (0, 31)]))]
-    devices = {"detector_smoke": [(12, 10), (6, 5), (4, 26)],
-               "detector_heat": [(30, 5), (38, 10)]}
-    meta = {"structure": "fireproof", "occupancy": "교육연구시설", "floors": 3}
-    return rooms, devices, meta
+# DWG→DXF 변환기: 환경변수 > PATH > 개발 머신 기본경로(배포 시 DWG2DXF env 또는 PATH로 지정).
+_DWG2DXF = (os.environ.get("DWG2DXF") or shutil.which("dwg2dxf")
+            or "/A.I_DATA/jbnu/miniconda3/envs/dwgtools/bin/dwg2dxf")
 
 
-def _layers_from_upload(file_storage):
-    """업로드 DXF → 레이어별 엔티티 요약(실제 파싱). DWG는 변환 필요 안내."""
-    name = (file_storage.filename or "").lower()
-    if name.endswith(".dwg"):
-        return [], "DWG는 서버측 DXF 변환 필요(dwg2dxf) — 다음 단계"
+def _parse_drawing(file_storage):
+    """업로드 DWG/DXF → 실제 도면 정보(레이어·엔티티·소방레이어·실명). 임시파일은 반드시 정리."""
+    import tempfile
+    import subprocess
+    from collections import Counter
+    name = file_storage.filename or "drawing"
+    ext = os.path.splitext(name)[1].lower()
+    tmp = tempfile.NamedTemporaryFile(suffix=ext or ".dxf", delete=False)
+    tmp.write(file_storage.read())
+    tmp.close()
+    dxf_path = tmp.name
+    cleanup = [tmp.name]
     try:
+        if ext == ".dwg":
+            if not _DWG2DXF or not os.path.exists(_DWG2DXF):
+                return {"fileName": name, "error": "서버에 DWG 변환 도구(dwg2dxf)가 없습니다."}
+            dxf_path = tmp.name + ".dxf"
+            cleanup.append(dxf_path)
+            try:
+                r = subprocess.run([_DWG2DXF, "-y", "-o", dxf_path, tmp.name],
+                                   capture_output=True, text=True, timeout=60)
+            except subprocess.TimeoutExpired:
+                return {"fileName": name, "error": "DWG 변환 시간 초과"}
+            if r.returncode != 0 or not os.path.exists(dxf_path):
+                return {"fileName": name, "error": "DWG→DXF 변환 실패"}
         import ezdxf
-        doc = ezdxf.read(io.StringIO(file_storage.read().decode("utf-8", "ignore")))
-        from collections import Counter
-        c = Counter(e.dxf.layer for e in doc.modelspace())
-        return [{"id": ln, "label": ln, "entityCount": n} for ln, n in c.most_common(12)], None
+        doc = ezdxf.readfile(dxf_path)
+        msp = doc.modelspace()
+        lc = Counter(e.dxf.layer for e in msp)
+        fire_kw = ("소방", "FIRE", "fire", "감지", "스프", "SP", "PIPE", "전기", "설비", "DEVICE")
+        fire_layers = sorted((ln for ln in lc if any(k in ln for k in fire_kw)),
+                             key=lambda ln: -lc[ln])[:15]
+        room_kw = ("보육", "유희", "놀이", "조리", "교사", "사무", "원장", "화장", "복도",
+                   "계단", "현관", "회의", "강의", "다목적", "세탁", "기계", "창고", "샤워", "주방")
+        rooms = []
+        for e in msp:
+            if e.dxftype() in ("TEXT", "MTEXT"):
+                try:
+                    t = (e.plain_text() if e.dxftype() == "MTEXT" else e.dxf.text).strip()
+                except Exception:
+                    continue
+                if 2 <= len(t) <= 12 and any('가' <= c <= '힣' for c in t) and "평면도" not in t \
+                        and (t.endswith(("실", "장")) or any(k in t for k in room_kw)):
+                    rooms.append(t)
+        return {"fileName": name, "layerCount": len(doc.layers), "entityCount": len(msp),
+                "fireLayers": list(fire_layers), "roomNames": list(dict.fromkeys(rooms))[:20]}
     except Exception as e:
-        return [], f"DXF 파싱 실패: {e}"
+        return {"fileName": name, "error": f"DXF 파싱 실패: {e}"}
+    finally:
+        for p in cleanup:
+            try:
+                os.unlink(p)
+            except OSError:
+                pass
 
 
 @app.route("/api/analyze", methods=["POST", "OPTIONS"])
@@ -77,42 +109,16 @@ def analyze():
     if request.method == "OPTIONS":
         return ("", 204)
 
-    # (1) 업로드 파일이 있으면 레이어 요약(실제) — 없으면 데모
-    layers, note = [], None
+    drawing_info = None
     if "file" in request.files and request.files["file"].filename:
-        layers, note = _layers_from_upload(request.files["file"])
+        drawing_info = _parse_drawing(request.files["file"])
 
-    # (2) 규칙 판정 — FireVal 엔진 실제 출력
-    rooms, devices, meta = _demo_scene()
-    viols = check_layout(rooms, devices, meta)
-
-    violations = []
-    for v in viols:
-        if v.status != "violation":
-            continue
-        clause = by_id(v.rule_id).clause if v.rule_id in RULE_CATALOG else ""
-        violations.append({
-            "id": len(violations) + 1,
-            "ruleId": v.rule_id, "clause": clause,
-            "severity": _SEV_KR.get(v.severity, v.severity),
-            "description": v.description,
-            "measured": v.measured_value, "required": v.required_value, "unit": v.unit,
-            "tone": _TONE.get(v.severity, "warning"),
-        })
-
-    # (3) 충돌(clash)·추천 — FireOpt 연결점(현재 구조적 예시, 계약 확정용)
-    conflicts = [{"id": 1, "severity": "심각", "title": "스프링클러 ↔ 덕트",
-                  "location": "강당", "height": "2450mm", "tone": "danger"}]
-    recommendations = [{"id": 1, "title": "대안 1", "summary": "감지기 2개 추가 배치",
-                        "saving": "₩0 (설비 추가)", "recommended": True}]
-
+    # 판정은 미연결(정직) — 가짜 데모 판정을 내보내지 않는다. 사실(drawingInfo)만.
     return jsonify({
-        "layers": layers,
-        "violations": violations,           # ← FireVal 실제 판정(신규, 목업 대체)
-        "conflicts": conflicts,             # ← FireOpt clash 연결 예정
-        "recommendations": recommendations,  # ← FireOpt optimize 연결 예정
-        "summary": summarize(viols),
-        "note": note,
+        "drawingInfo": drawing_info,           # ← 업로드 도면의 실제 사실
+        "violations": [],                      # ← NFTC 적정성 판정: 인식 파이프라인 연결 후
+        "recommendations": [],
+        "judgmentStatus": "pending-recognition",
     })
 
 
