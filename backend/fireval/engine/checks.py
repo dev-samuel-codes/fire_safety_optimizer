@@ -254,8 +254,24 @@ def check_layout(rooms, devices, meta=None):
         for r in rooms:
             s_in = [p for p in smoke if _in(r.polygon, p)]
             h_in = [p for p in heat if _in(r.polygon, p)]
-            if h_in:      # 반원 기호=차동식 스포트형 2종 가정(가장 흔한 열감지기), 4m미만 내화 70㎡
-                out.append(check_detector_area(r, h_in, dtype="diff_spot_2", structure=structure))
+            if h_in:      # 열감지기 종별(차동식/정온식) 미상 → 관대끝값(70㎡) 단정 금지(false-pass).
+                # 최관대(차동식2종 70㎡)로도 미달=확정 위반, 최엄격(정온식2종 20㎡)도 충족=확정 적합,
+                # 그 사이는 종별 미상이라 판정 보류(not_applicable=확인 필요). 인식(B)이 종별 주면 확정.
+                n = len(h_in)
+                need_lo = max(1, math.ceil(r.area / C.detector_area("diff_spot_2", 3.0, structure)))
+                need_hi = max(1, math.ceil(r.area / C.detector_area("fixed_spot_2", 3.0, structure)))
+                if n >= need_hi:
+                    out.append(_mk("FV-DET-heat_bounded", "compliant",
+                        desc=f"{r.name}: 열감지기 {n}개 ≥ 최엄격 필요 {need_hi}개 → 종별무관 적합",
+                        evidence=_poly_evidence(r.polygon)))
+                elif n < need_lo:
+                    out.append(_mk("FV-DET-heat_bounded", "violation",
+                        desc=f"{r.name}: 열감지기 {n}개 < 최관대 필요 {need_lo}개 → 종별무관 위반",
+                        evidence=_poly_evidence(r.polygon)))
+                else:
+                    out.append(_mk("FV-DET-heat_bounded", "not_applicable",
+                        desc=f"{r.name}: 열감지기 {n}개(필요 {need_lo}~{need_hi}개) — 종별(차동식/정온식) 미상, 확인 필요",
+                        evidence=_poly_evidence(r.polygon)))
             if s_in:
                 out.append(check_detector_area(r, s_in, dtype="smoke_12", structure=structure))
             if not s_in and not h_in:   # 무설치 방 → 도면 기본종별로 미달 판정(과거 동작 보존)

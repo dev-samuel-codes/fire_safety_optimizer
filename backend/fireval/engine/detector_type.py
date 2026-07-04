@@ -31,10 +31,12 @@ from fireopt import constants as C
 _SMOKE = "smoke_12"
 
 # NFTC 203 2.4.2 — 이름에 이 키워드가 있으면 '연기 의무'(조건 없음).
+# ⚠ 짧고 모호한 키워드 금지: bare "피트"는 "피트니스"에 오매칭해 허위 조항을 인용한다.
+#   반드시 '파이프피트/린넨슈트'처럼 명확한 복합어만.
 _SMOKE_UNCONDITIONAL = {
     "계단": "2.4.2.1", "경사로": "2.4.2.1", "에스컬레이터": "2.4.2.1",
-    "승강로": "2.4.2.3", "린넨슈트": "2.4.2.3", "린넨": "2.4.2.3",
-    "파이프피트": "2.4.2.3", "파이프덕트": "2.4.2.3", "피트": "2.4.2.3",
+    "승강로": "2.4.2.3", "린넨슈트": "2.4.2.3",
+    "파이프피트": "2.4.2.3", "파이프덕트": "2.4.2.3",
 }
 # 2.4.2.5 — 취침류 실명(용도 조건 충족 시 연기 의무).
 _SLEEP_NAMES = ("숙소", "침실", "객실", "병실", "입원실", "생활실", "숙직", "취침",
@@ -121,7 +123,7 @@ def detector_requirement(name: str, area_m2: float, *, occupancy: str = "",
                 "type_kr": "연기", "dtype": cls["dtype"], "n_required": n,
                 "basis": cls["basis"],
                 "detail": f"{name} {area_m2:.1f}㎡ → 연기감지기 {n}개 필요"
-                          f"(기준 {allowed:.0f}㎡/개, {cls['basis']})"}
+                          f"(기준 {allowed:.0f}㎡/개, {cls['basis']}, 부착높이 {mount_height:.0f}m 가정)"}
 
     # conditional / designer_choice → 종류 미확정 → 조건부 N (연기 vs 열 범위)
     n_smoke = _n_for(_SMOKE, area_m2, mount_height, structure)
@@ -139,7 +141,7 @@ def detector_requirement(name: str, area_m2: float, *, occupancy: str = "",
             "maybe_exempt": cls.get("maybe_exempt", False),
             "conditional": {"연기": n_smoke, "열(종별따라)": heat_str},
             "detail": f"{name} {area_m2:.1f}㎡ → 종류 미확정: 연기 {n_smoke}개 / "
-                      f"열 {heat_str}개(차동식2종~정온식2종) — 확정하려면 감지기 인식 필요"}
+                      f"열 {heat_str}개(차동식2종~정온식2종, 부착높이 {mount_height:.0f}m 가정) — 확정하려면 감지기 인식 필요"}
 
 
 def judge_rooms(rooms, *, occupancy="", structure=None, mount_height=3.0):

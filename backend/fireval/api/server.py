@@ -43,11 +43,12 @@ _DWG2DXF = (os.environ.get("DWG2DXF") or shutil.which("dwg2dxf")
             or "/A.I_DATA/jbnu/miniconda3/envs/dwgtools/bin/dwg2dxf")
 
 
-def _parse_drawing(file_storage, structure=None):
+def _parse_drawing(file_storage, structure=None, occupancy=""):
     """업로드 DWG/DXF → (사실 dict, 방판정 list, dxf_path, 정리목록).
 
     임시파일은 **호출측(analyze)이 정리**한다(같은 파일로 실 판정도 돌려야 하므로).
     사실=레이어·소방레이어·실명. 방판정=flood-fill 면적 + NFTC 종류/요구(구조 미상/미신뢰=needs_review).
+    occupancy(용도)는 judge_rooms로 전달 — 2.4.2.5 취침류 방의 연기의무 확정에 필요.
     """
     import tempfile
     import subprocess
@@ -76,9 +77,14 @@ def _parse_drawing(file_storage, structure=None):
         doc = ezdxf.readfile(dxf_path)
         msp = doc.modelspace()
         lc = Counter(e.dxf.layer for e in msp)
-        fire_kw = ("소방", "FIRE", "fire", "감지", "스프", "SP", "PIPE", "전기", "설비", "DEVICE")
-        fire_layers = sorted((ln for ln in lc if any(k in ln for k in fire_kw)),
-                             key=lambda ln: -lc[ln])[:15]
+        # 소방 레이어 = 명확한 소방 키워드만. 짧고 모호한 'SP'/'PIPE'/'전기'는 비소방 레이어에
+        # 부분일치해 오표기하므로 제외(사실 왜곡 방지).
+        _fire_ko = ("소방", "감지", "스프링클러", "발신기", "수신기", "경보", "소화", "피난")
+        _fire_en = ("FIRE", "FP-", "FP_", "SP_HEAD", "SP_LINE", "SPRINKLER", "SMOKE", "DETECT")
+
+        def _is_fire(ln):
+            return any(k in ln for k in _fire_ko) or any(k in ln.upper() for k in _fire_en)
+        fire_layers = sorted((ln for ln in lc if _is_fire(ln)), key=lambda ln: -lc[ln])[:15]
         from ..ingest.room_extract_raster import is_room_name, guess_wall_layers, rooms_from_dxf
         from ..engine.detector_type import judge_rooms
         rooms = []
@@ -96,7 +102,7 @@ def _parse_drawing(file_storage, structure=None):
         try:
             walls = guess_wall_layers(doc)
             extracted = rooms_from_dxf(doc, walls) if walls else []
-            judgments = judge_rooms(extracted, occupancy="", structure=structure)
+            judgments = judge_rooms(extracted, occupancy=occupancy, structure=structure)
         except Exception as e:
             judgments = [{"room": "", "status": "needs_review", "reason": f"방 판정 생략: {e}"}]
         return facts, judgments, dxf_path, cleanup
@@ -107,14 +113,17 @@ def _parse_drawing(file_storage, structure=None):
 def _real_violations(dxf_path, structure, occupancy):
     """깨끗 규격(방 폴리곤 + 소방설비 심볼 추출되는) 도면이면 규칙엔진으로 **실 pass/fail**.
 
-    게이트: 방이 sane(폴리곤 추출됨, 쓰레기 폴백 아님) + 설비 심볼 발견 시에만. 아니면 [](가짜 금지).
+    게이트: (a)구조가 유효(내화/기타)할 때만 — 미상을 내화로 낙관 가정하면 열감지기 과소=false-pass
+    (roomJudgments의 needs_review 규율과 일치). (b)방 sane + 설비 심볼 발견 시에만. 아니면 [](가짜 금지).
     반환: [{ruleId, status(violation|compliant), severity, description, measured, required, unit}, ...]
     """
+    if structure not in ("fireproof", "noncombustible", "other"):
+        return []       # 구조 미상 → 실 pass/fail 보류(낙관 가정 금지). roomJudgments로 폴백.
     try:
         from ..ingest.dxf_ir import ingest_and_check, ir_summary
         ann, viols = ingest_and_check(
             dxf_path,
-            structure=structure or "fireproof",
+            structure=structure,
             occupancy=occupancy or "common",
             detector_type="smoke_12")
         by = ir_summary(ann).get("by_category", {})
@@ -124,8 +133,8 @@ def _real_violations(dxf_path, structure, occupancy):
             return []
         out = []
         for v in viols:
-            if v.status not in ("violation", "compliant"):
-                continue
+            if v.status not in ("violation", "compliant", "not_applicable"):
+                continue      # not_applicable=확인필요(열감지기 종별미상 등) — 숨기지 않고 노출
             out.append({
                 "ruleId": v.rule_id, "status": v.status,
                 "severity": getattr(v, "severity", "") or "",
@@ -147,7 +156,7 @@ def analyze():
         structure = request.form.get("structure") or None    # "fireproof"|"other"|미상(None)
         occupancy = request.form.get("occupancy") or ""
         drawing_info, room_judgments, dxf_path, cleanup = _parse_drawing(
-            request.files["file"], structure)
+            request.files["file"], structure, occupancy)
         try:
             if dxf_path:
                 violations = _real_violations(dxf_path, structure, occupancy)

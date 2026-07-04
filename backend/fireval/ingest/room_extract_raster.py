@@ -77,6 +77,10 @@ def extract_rooms_raster(wall_segments, room_labels, mm_per_px=25.0,
     x0, x1, y0, y1 = min(xs), max(xs), min(ys), max(ys)
     W = int((x1 - x0) / mm_per_px) + 2
     H = int((y1 - y0) / mm_per_px) + 2
+    # 원점이탈/대형 도면 → 비트맵 폭주(OOM·CPU) 방지: 상한 초과 시 판정 보류(전부 needs_review).
+    if W < 2 or H < 2 or W > 20000 or H > 20000 or W * H > 60_000_000:
+        return [{"name": n, "area_m2": 0.0, "confidence": 0.0,
+                 "reliable": False, "merged": True} for n, _ in room_labels]
     walls = _rasterize(wall_segments, x0, y1, mm_per_px, W, H)
     seeds = [(int((x - x0) / mm_per_px), int((y1 - y) / mm_per_px)) for _, (x, y) in room_labels]
 
@@ -135,19 +139,33 @@ def guess_wall_layers(doc):
     return cand or [lc.most_common(1)[0][0]]
 
 
+# AutoCAD $INSUNITS → mm 환산(비-mm 도면이 mm 가정으로 붕괴하는 것 방지).
+_INSUNITS_MM = {1: 25.4, 2: 304.8, 4: 1.0, 5: 10.0, 6: 1000.0, 8: 0.0254, 9: 0.0254, 13: 1e-6}
+
+
+def _to_mm_factor(doc):
+    """도면 단위 → mm 배율. 미지정(0)/미지 단위는 mm(1.0) 가정."""
+    try:
+        return _INSUNITS_MM.get(int(doc.header.get("$INSUNITS", 0)), 1.0)
+    except Exception:
+        return 1.0
+
+
 def rooms_from_dxf(doc, wall_layers, *, room_layers=None, mm_per_px=25.0, **kw):
     """dxf 문서 + 벽 레이어 → 방(name·area·confidence) 리스트.
 
     ⚠ 벽 레이어 선택은 도면마다 다르다(ARCH / WAL2+WAL+COL …) → 호출측이 지정한다.
        자동 선택 휴리스틱은 아직 견고하지 않음(별도 과제). 실명은 TEXT/MTEXT에서 추출.
+       좌표는 $INSUNITS로 mm 환산(비-mm 도면 붕괴 방지) 후 라스터화.
     """
     msp = doc.modelspace()
+    f = _to_mm_factor(doc)
     wall_set = set(wall_layers)
     segs = []
     for e in msp.query("LINE"):
         if e.dxf.layer in wall_set:
             a, b = e.dxf.start, e.dxf.end
-            segs.append((a.x, a.y, b.x, b.y))
+            segs.append((a.x * f, a.y * f, b.x * f, b.y * f))
     room_set = set(room_layers) if room_layers else None
     labels = []
     for e in msp:
@@ -160,5 +178,5 @@ def rooms_from_dxf(doc, wall_layers, *, room_layers=None, mm_per_px=25.0, **kw):
         except Exception:
             continue
         if is_room_name(t):
-            labels.append((t, (e.dxf.insert.x, e.dxf.insert.y)))
+            labels.append((t, (e.dxf.insert.x * f, e.dxf.insert.y * f)))
     return extract_rooms_raster(segs, labels, mm_per_px=mm_per_px, **kw)

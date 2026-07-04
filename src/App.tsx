@@ -347,16 +347,21 @@ export function App() {
                 <div style={{ display: "flex", gap: 10, marginBottom: 8, fontSize: 12.5 }}>
                   <span style={{ color: "#e05a5a", fontWeight: 600 }}>위반 {(analysis.violations ?? []).filter((v) => v.status === "violation").length}</span>
                   <span style={{ color: "#5ac08a", fontWeight: 600 }}>적합 {(analysis.violations ?? []).filter((v) => v.status === "compliant").length}</span>
-                  <span style={{ opacity: 0.6 }}>· 배치 vs 필요 실판정</span>
+                  <span style={{ color: "#d2a03c", fontWeight: 600 }}>확인필요 {(analysis.violations ?? []).filter((v) => v.status === "not_applicable").length}</span>
+                  <span style={{ opacity: 0.6 }}>· 배치 vs 필요</span>
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 4, maxHeight: 220, overflowY: "auto" }}>
-                  {(analysis.violations ?? []).slice().sort((a, b) => (a.status === "violation" ? 0 : 1) - (b.status === "violation" ? 0 : 1)).map((v, i) => (
-                    <div key={`${v.ruleId}-${i}`} style={{ fontSize: 11.5, lineHeight: 1.4, padding: "5px 8px", borderRadius: 6,
-                      background: v.status === "violation" ? "rgba(224,90,90,0.16)" : "rgba(90,192,138,0.12)",
-                      borderLeft: `3px solid ${v.status === "violation" ? "#e05a5a" : "#5ac08a"}` }}>
-                      <b style={{ color: v.status === "violation" ? "#e88" : "#8d8" }}>{v.status === "violation" ? "위반" : "적합"}</b> · {v.description}
-                    </div>
-                  ))}
+                  {(analysis.violations ?? []).slice().sort((a, b) => (a.status === "violation" ? 0 : a.status === "not_applicable" ? 1 : 2) - (b.status === "violation" ? 0 : b.status === "not_applicable" ? 1 : 2)).map((v, i) => {
+                    const tone = v.status === "violation" ? { bg: "rgba(224,90,90,0.16)", bar: "#e05a5a", fg: "#e88", label: "위반" }
+                      : v.status === "not_applicable" ? { bg: "rgba(210,160,60,0.13)", bar: "#d2a03c", fg: "#d9b060", label: "확인필요" }
+                      : { bg: "rgba(90,192,138,0.12)", bar: "#5ac08a", fg: "#8d8", label: "적합" };
+                    return (
+                      <div key={`${v.ruleId}-${i}`} style={{ fontSize: 11.5, lineHeight: 1.4, padding: "5px 8px", borderRadius: 6,
+                        background: tone.bg, borderLeft: `3px solid ${tone.bar}` }}>
+                        <b style={{ color: tone.fg }}>{tone.label}</b> · {v.description}
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             ) : null}
@@ -420,9 +425,10 @@ export function App() {
                   <div style={{ display: "flex", flexDirection: "column", gap: 5, maxHeight: 260, overflowY: "auto" }}>
                     {(analysis.roomJudgments ?? []).map((j, i) => (
                       <div key={`${j.room}-${i}`} style={{ fontSize: 11.5, lineHeight: 1.45, padding: "6px 8px", borderRadius: 6,
-                        background: j.status === "determined" ? "rgba(210,80,80,0.14)" : "rgba(120,140,170,0.1)",
-                        borderLeft: `3px solid ${j.status === "determined" ? "#e05a5a" : "#8fa4c8"}` }}>
+                        background: j.status === "determined" ? "rgba(210,160,60,0.13)" : "rgba(120,140,170,0.1)",
+                        borderLeft: `3px solid ${j.status === "determined" ? "#d2a03c" : "#8fa4c8"}` }}>
                         <b>{j.room || "—"}</b>{j.area_m2 ? ` · ${j.area_m2}㎡` : ""}
+                        {j.status === "determined" ? <span style={{ opacity: 0.65 }}> · 요구</span> : null}
                         {j.status === "needs_review" ? <span style={{ opacity: 0.65 }}> · 확인 필요</span> : null}
                         <div style={{ opacity: 0.85, marginTop: 2 }}>{j.detail || j.reason}</div>
                       </div>
