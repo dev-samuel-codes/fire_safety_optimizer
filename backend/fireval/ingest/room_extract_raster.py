@@ -96,9 +96,27 @@ def extract_rooms_raster(wall_segments, room_labels, mm_per_px=25.0,
     return out
 
 
-_ROOM_NAME_KEYWORDS = ("보육", "유희", "놀이", "조리", "교사", "사무", "원장", "화장", "복도",
-                       "계단", "현관", "회의", "강의", "다목적", "세탁", "기계", "창고", "샤워",
-                       "주방", "숙소", "침실", "객실", "병실", "입원", "교재", "관리", "휴게", "식당")
+_ROOM_KW = ("보육", "유희", "놀이", "조리", "교사", "사무", "원장", "화장", "복도", "계단",
+            "현관", "회의", "강의", "다목적", "세탁", "기계실", "창고", "샤워", "주방", "실습",
+            "미용", "준비", "훈련", "로비", "숙소", "침실", "객실", "병실", "입원", "교재",
+            "휴게", "식당", "수술", "교실", "거실", "교무", "보건", "관리")
+# 가구·집기·도면주기(방 아님) — 이게 없으면 수납장/진열장/서랍장/강의대/벽체도장/전개도 등이 방으로 오검출.
+_NON_ROOM = ("도면", "전개도", "입면", "단면", "상세", "범례", "평면", "일람", "진열", "수납",
+             "서랍", "선반", "의자", "마네킹", "테이블", "책상", "캐비닛", "도장", "걸이",
+             "행거", "가구", "집기", "목작업")
+
+
+def is_room_name(text):
+    """텍스트가 '방 이름'인지. '…실'로 끝나거나 방 키워드 포함하되, 가구/도면주기 마커나
+    가구 접미(…장/…대/…판)는 제외 — 인테리어·구축 도면의 집기 라벨 오검출 방지."""
+    t = (text or "").strip()
+    if not (2 <= len(t) <= 12) or not any('가' <= c <= '힣' for c in t):
+        return False
+    if any(b in t for b in _NON_ROOM):
+        return False
+    if t.endswith(("장", "대", "판", "걸이")):        # 수납장·진열장·강의대 = 가구
+        return False
+    return t.endswith("실") or any(k in t for k in _ROOM_KW)
 
 
 def guess_wall_layers(doc):
@@ -141,6 +159,6 @@ def rooms_from_dxf(doc, wall_layers, *, room_layers=None, mm_per_px=25.0, **kw):
             t = (e.plain_text() if e.dxftype() == "MTEXT" else e.dxf.text).strip()
         except Exception:
             continue
-        if 2 <= len(t) <= 12 and any(k in t for k in _ROOM_NAME_KEYWORDS):
+        if is_room_name(t):
             labels.append((t, (e.dxf.insert.x, e.dxf.insert.y)))
     return extract_rooms_raster(segs, labels, mm_per_px=mm_per_px, **kw)

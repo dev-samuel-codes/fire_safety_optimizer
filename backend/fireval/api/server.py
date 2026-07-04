@@ -84,8 +84,7 @@ def _parse_drawing(file_storage, structure=None):
         fire_kw = ("소방", "FIRE", "fire", "감지", "스프", "SP", "PIPE", "전기", "설비", "DEVICE")
         fire_layers = sorted((ln for ln in lc if any(k in ln for k in fire_kw)),
                              key=lambda ln: -lc[ln])[:15]
-        room_kw = ("보육", "유희", "놀이", "조리", "교사", "사무", "원장", "화장", "복도",
-                   "계단", "현관", "회의", "강의", "다목적", "세탁", "기계", "창고", "샤워", "주방")
+        from ..ingest.room_extract_raster import is_room_name
         rooms = []
         for e in msp:
             if e.dxftype() in ("TEXT", "MTEXT"):
@@ -93,8 +92,7 @@ def _parse_drawing(file_storage, structure=None):
                     t = (e.plain_text() if e.dxftype() == "MTEXT" else e.dxf.text).strip()
                 except Exception:
                     continue
-                if 2 <= len(t) <= 12 and any('가' <= c <= '힣' for c in t) and "평면도" not in t \
-                        and (t.endswith(("실", "장")) or any(k in t for k in room_kw)):
+                if is_room_name(t):        # 가구/집기/도면주기 배제(수납장·진열장·강의대 등)
                     rooms.append(t)
         facts = {"fileName": name, "layerCount": len(doc.layers), "entityCount": len(msp),
                  "fireLayers": list(fire_layers), "roomNames": list(dict.fromkeys(rooms))[:20]}
