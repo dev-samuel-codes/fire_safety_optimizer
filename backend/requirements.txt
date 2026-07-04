@@ -1,18 +1,17 @@
 # FireOpt 백엔드 API — 런타임 의존성
 # 설치:  pip install -r requirements.txt
 
-# --- API 서버 기동·DXF 처리·방추출/판정(①) ---
+# --- API 서버 기동·DXF 처리·방추출·실 판정 ---
 flask>=3.0
 ezdxf>=1.3
 numpy>=1.26       # raster 방추출
 scipy>=1.11       # raster 방추출(morphology closing)
 Pillow>=10.0      # raster 방추출(벽 래스터화)
-
-# --- 향후 연결 시 주석 해제 ---
-# shapely>=2.0     # 기하 판정(거리/피복) — check_layout 전면 연결 시
+shapely>=2.0      # 규칙엔진 기하 판정(면적·거리·피복)
+networkx>=3.0     # 규칙엔진(경계구역/그래프)
 
 # --- FireOpt 최적화/IFC/렌더 전용 (웹앱 미사용, 설치 까다로움 — 필요 시만) ---
-# ifcopenshell, matplotlib, networkx
+# ifcopenshell, matplotlib
 
 # 개발/테스트: pytest
 

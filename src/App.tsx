@@ -44,6 +44,7 @@ export function App() {
 
   // ── 백엔드(FireVal/FireOpt 엔진) 실시간 연결: POST /api/analyze ──
   const [structure, setStructure] = useState<string>("");   // "" 미상 | "fireproof" | "other"
+  const [occupancy, setOccupancy] = useState<string>("");   // "" 미상 | 용도 문자열
   const [analysis, setAnalysis] = useState<{
     drawingInfo?: {
       fileName?: string; layerCount?: number; entityCount?: number;
@@ -53,10 +54,13 @@ export function App() {
       room?: string; status?: string; area_m2?: number;
       detail?: string; reason?: string; basis?: string;
     }>;
-  }>({ drawingInfo: null, roomJudgments: [] });
+    violations?: Array<{
+      ruleId?: string; status?: string; severity?: string; description?: string;
+    }>;
+  }>({ drawingInfo: null, roomJudgments: [], violations: [] });
 
-  // 업로드 파일 + 구조를 FormData로 전송 → 백엔드가 실제 사실 + 방별 NFTC 판정 반환
-  const runAnalysis = useCallback((file?: File, structureVal?: string) => {
+  // 업로드 파일 + 구조/용도를 FormData로 전송 → 백엔드가 사실 + 방별요구 + (깨끗규격이면) 실 pass/fail 반환
+  const runAnalysis = useCallback((file?: File, structureVal?: string, occupancyVal?: string) => {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 30000);
     const options: RequestInit = { method: "POST", signal: controller.signal };
@@ -65,6 +69,9 @@ export function App() {
       form.append("file", file);
       if (structureVal) {
         form.append("structure", structureVal);
+      }
+      if (occupancyVal) {
+        form.append("occupancy", occupancyVal);
       }
       options.body = form;
     }
@@ -76,7 +83,11 @@ export function App() {
         return res.json();
       })
       .then((d) => {
-        setAnalysis({ drawingInfo: d.drawingInfo ?? null, roomJudgments: d.roomJudgments ?? [] });
+        setAnalysis({
+          drawingInfo: d.drawingInfo ?? null,
+          roomJudgments: d.roomJudgments ?? [],
+          violations: d.violations ?? [],
+        });
         if (file) {
           setToast(d.drawingInfo?.error ? `추출 실패: ${d.drawingInfo.error}` : `${file.name} 분석 완료`);
         }
@@ -118,14 +129,22 @@ export function App() {
     setZoomLevel((current) => Math.max(current, uploadedDrawingInitialZoom));
     setPanOffset({ x: 0, y: 0 });
     setToast(`${file.name} 분석 중… (도면 정보 추출)`);
-    runAnalysis(file, structure);
+    runAnalysis(file, structure, occupancy);
   };
 
-  // 건물 구조 변경 → 업로드된 도면 재판정(구조는 열감지기 기준면적에 영향 = 안전 임계 입력)
+  // 건물 구조 변경 → 재판정(구조는 열감지기 기준면적에 영향 = 안전 임계 입력)
   const handleStructureChange = (value: string) => {
     setStructure(value);
     if (uploadedFile) {
-      runAnalysis(uploadedFile, value);
+      runAnalysis(uploadedFile, value, occupancy);
+    }
+  };
+
+  // 용도 변경 → 재판정(취침거실 연기의무·스프링클러 반경 등에 영향)
+  const handleOccupancyChange = (value: string) => {
+    setOccupancy(value);
+    if (uploadedFile) {
+      runAnalysis(uploadedFile, structure, value);
     }
   };
 
@@ -319,8 +338,28 @@ export function App() {
           <section className="analysis-panel">
             <div className="list-header">
               <h3>법규 판정 (NFTC)</h3>
-              <span style={{ fontSize: 12, opacity: 0.7 }}>판정 엔진: 준비 중</span>
+              <span style={{ fontSize: 12, opacity: 0.7 }}>
+                {(analysis.violations ?? []).length > 0 ? "실 판정" : "요구 산정"}
+              </span>
             </div>
+            {(analysis.violations ?? []).length > 0 ? (
+              <div style={{ marginBottom: 14 }}>
+                <div style={{ display: "flex", gap: 10, marginBottom: 8, fontSize: 12.5 }}>
+                  <span style={{ color: "#e05a5a", fontWeight: 600 }}>위반 {(analysis.violations ?? []).filter((v) => v.status === "violation").length}</span>
+                  <span style={{ color: "#5ac08a", fontWeight: 600 }}>적합 {(analysis.violations ?? []).filter((v) => v.status === "compliant").length}</span>
+                  <span style={{ opacity: 0.6 }}>· 배치 vs 필요 실판정</span>
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 4, maxHeight: 220, overflowY: "auto" }}>
+                  {(analysis.violations ?? []).slice().sort((a, b) => (a.status === "violation" ? 0 : 1) - (b.status === "violation" ? 0 : 1)).map((v, i) => (
+                    <div key={`${v.ruleId}-${i}`} style={{ fontSize: 11.5, lineHeight: 1.4, padding: "5px 8px", borderRadius: 6,
+                      background: v.status === "violation" ? "rgba(224,90,90,0.16)" : "rgba(90,192,138,0.12)",
+                      borderLeft: `3px solid ${v.status === "violation" ? "#e05a5a" : "#5ac08a"}` }}>
+                      <b style={{ color: v.status === "violation" ? "#e88" : "#8d8" }}>{v.status === "violation" ? "위반" : "적합"}</b> · {v.description}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
             {analysis.drawingInfo && !analysis.drawingInfo.error ? (
               <div style={{ marginBottom: 12 }}>
                 <p style={{ fontSize: 12.5, margin: "0 0 8px", lineHeight: 1.6 }}>
@@ -360,6 +399,19 @@ export function App() {
                     <option value="">건물구조 미상</option>
                     <option value="fireproof">내화구조</option>
                     <option value="other">기타구조</option>
+                  </select>
+                  <select
+                    value={occupancy}
+                    onChange={(event) => handleOccupancyChange(event.target.value)}
+                    style={{ fontSize: 11.5, padding: "2px 6px", borderRadius: 6, background: "rgba(120,140,170,0.15)", color: "inherit", border: "1px solid rgba(120,140,170,0.35)" }}
+                  >
+                    <option value="">용도 미상</option>
+                    <option value="공동주택">공동주택</option>
+                    <option value="숙박시설">숙박시설</option>
+                    <option value="의료시설">의료시설</option>
+                    <option value="노유자시설">노유자시설</option>
+                    <option value="교육연구시설">교육연구시설</option>
+                    <option value="업무시설">업무시설</option>
                   </select>
                 </div>
                 {(analysis.roomJudgments ?? []).length === 0 ? (
