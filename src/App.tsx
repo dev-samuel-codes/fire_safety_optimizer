@@ -32,7 +32,7 @@ const navItems = [
 ];
 
 export function App() {
-  const [toast, setToast] = useState("분석 완료");
+  const [toast, setToast] = useState("대기 중 · 도면을 업로드해주세요");
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [activeTool, setActiveTool] = useState<ToolId>("pan");
   const [zoomLevel, setZoomLevel] = useState(100);
@@ -52,16 +52,33 @@ export function App() {
 
   // 업로드 파일이 있으면 FormData로 전송 → 백엔드가 그 도면의 실제 정보(drawingInfo) 반환
   const runAnalysis = useCallback((file?: File) => {
-    const options: RequestInit = { method: "POST" };
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 30000);
+    const options: RequestInit = { method: "POST", signal: controller.signal };
     if (file) {
       const form = new FormData();
       form.append("file", file);
       options.body = form;
     }
     fetch("/api/analyze", options)
-      .then((res) => res.json())
-      .then((d) => setAnalysis({ drawingInfo: d.drawingInfo ?? null }))
-      .catch(() => undefined);
+      .then((res) => {
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}`);
+        }
+        return res.json();
+      })
+      .then((d) => {
+        setAnalysis({ drawingInfo: d.drawingInfo ?? null });
+        if (file) {
+          setToast(d.drawingInfo?.error ? `추출 실패: ${d.drawingInfo.error}` : `${file.name} 분석 완료`);
+        }
+      })
+      .catch((err) => {
+        setToast(err?.name === "AbortError"
+          ? "도면 분석 시간 초과 (30초) — 백엔드 상태를 확인해주세요"
+          : "백엔드 연결 실패 — 서버 상태를 확인해주세요");
+      })
+      .finally(() => clearTimeout(timer));
   }, []);
   useEffect(() => {
     runAnalysis();
