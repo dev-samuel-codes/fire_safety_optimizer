@@ -158,8 +158,12 @@ def judge_rooms(rooms, *, occupancy="", structure=None, mount_height=3.0):
         name = r.get("name", "")
         area = float(r.get("area_m2", 0.0) or 0.0)
         if not r.get("reliable", False):
+            if r.get("confidence", 0) >= 0.6 and not r.get("cross_ok", True):
+                reason = "flood-fill·레이캐스트 면적 불일치 — 병합 의심(확인 필요)"
+            else:
+                reason = "면적 신뢰도 낮음(추출 불안정·붕괴 의심)"
             out.append({"room": name, "status": "needs_review", "area_m2": round(area, 1),
-                        "reason": "면적 신뢰도 낮음(추출 불안정·병합/붕괴 의심)"})
+                        "reason": reason})
         elif structure not in ("fireproof", "noncombustible", "other"):
             out.append({"room": name, "status": "needs_review", "area_m2": round(area, 1),
                         "reason": "건물 구조(내화/기타) 미상 — 열 감지기 과소계산 위험방향"})

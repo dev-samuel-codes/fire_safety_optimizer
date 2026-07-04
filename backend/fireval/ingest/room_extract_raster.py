@@ -60,14 +60,41 @@ def _areas_at(walls, seeds, mm_per_px, iters):
     return areas, merged
 
 
+def _raycast_area(segs, sx, sy, tol=200.0, min_wall=1500.0):
+    """라벨(sx,sy)에서 사방 최근접 **긴 직교벽**까지 clear 사각형 면적(㎡). flood-fill 교차검증용.
+
+    독립적 방법(벡터 레이캐스트) — flood-fill이 무명공간과 병합돼 과대해지면 이 값과 크게
+    어긋난다(안정성 게이트가 못 잡는 '안정적으로 틀린 병합방'의 탐지 신호). 4벽 못 찾으면 None.
+    min_wall: 이 길이 미만 선분은 가구/집기로 보고 무시(짧은 선을 맞아 clear면적이 과소되는 것 방지).
+    """
+    left = right = down = up = None
+    for ax, ay, bx, by in segs:
+        dx, dy = bx - ax, by - ay
+        if abs(dx) < tol and abs(dy) >= min_wall and min(ay, by) - 100 <= sy <= max(ay, by) + 100:  # 수직 긴벽
+            wx = (ax + bx) / 2.0
+            if wx > sx and (right is None or wx < right):
+                right = wx
+            elif wx < sx and (left is None or wx > left):
+                left = wx
+        if abs(dy) < tol and abs(dx) >= min_wall and min(ax, bx) - 100 <= sx <= max(ax, bx) + 100:  # 수평 긴벽
+            wy = (ay + by) / 2.0
+            if wy > sy and (up is None or wy < up):
+                up = wy
+            elif wy < sy and (down is None or wy > down):
+                down = wy
+    if None in (left, right, down, up):
+        return None
+    return (right - left) * (up - down) / 1e6
+
+
 def extract_rooms_raster(wall_segments, room_labels, mm_per_px=25.0,
                          close_levels=(10, 14, 18), min_area=3.0, max_area=400.0):
     """
     wall_segments: [(ax,ay,bx,by), ...] 벽선 (도면 단위, mm 가정).
     room_labels:   [(name, (x,y)), ...] 방 이름 텍스트와 삽입점 (도면 단위).
-    반환: [{name, area_m2, confidence(0~1), reliable(bool), merged(bool)}, ...]
+    반환: [{name, area_m2, confidence(0~1), reliable(bool), merged(bool), cross_m2}, ...]
       - confidence = closing 레벨 간 면적 안정성(1 - 변동/중앙값), 게이트 미통과 시 0.
-      - reliable = confidence >= 0.6 (판정 투입 대상).
+      - reliable = confidence>=0.6 AND 레이캐스트 교차검증 통과(둘 다 신뢰). 불일치=강등(안전).
     """
     if not wall_segments or not room_labels:
         return [{"name": n, "area_m2": 0.0, "confidence": 0.0,
@@ -86,7 +113,7 @@ def extract_rooms_raster(wall_segments, room_labels, mm_per_px=25.0,
 
     per_level = [_areas_at(walls, seeds, mm_per_px, it) for it in close_levels]
     out = []
-    for i, (name, _) in enumerate(room_labels):
+    for i, (name, seed_xy) in enumerate(room_labels):
         areas = [per_level[k][0][i] for k in range(len(close_levels))]
         merged = any(per_level[k][1][i] for k in range(len(close_levels)))
         med = sorted(areas)[len(areas) // 2]
@@ -95,8 +122,16 @@ def extract_rooms_raster(wall_segments, room_labels, mm_per_px=25.0,
         else:
             spread = (max(areas) - min(areas)) / med if med > 0 else 1.0
             conf = max(0.0, round(1.0 - spread, 2))
+        # 2방법 교차검증: 독립 레이캐스트 면적과 큰 불일치(병합/누출)면 신뢰 강등(안전방향).
+        rc = _raycast_area(wall_segments, seed_xy[0], seed_xy[1])
+        cross_ok = True
+        if conf >= 0.6 and rc and rc > 0:
+            ratio = med / rc
+            if ratio > 1.7 or ratio < 0.45:      # 총량이 크게 다름 = 병합/붕괴 의심 → 확정 대상서 제외
+                cross_ok = False
         out.append({"name": name, "area_m2": round(med, 1), "confidence": conf,
-                    "reliable": conf >= 0.6, "merged": merged})
+                    "reliable": (conf >= 0.6 and cross_ok), "merged": merged,
+                    "cross_m2": (round(rc, 1) if rc else None), "cross_ok": cross_ok})
     return out
 
 
