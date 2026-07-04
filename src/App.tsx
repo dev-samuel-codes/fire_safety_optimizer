@@ -45,6 +45,7 @@ export function App() {
   // ── 백엔드(FireVal/FireOpt 엔진) 실시간 연결: POST /api/analyze ──
   const [structure, setStructure] = useState<string>("");   // "" 미상 | "fireproof" | "other"
   const [occupancy, setOccupancy] = useState<string>("");   // "" 미상 | 용도 문자열
+  const [mount, setMount] = useState<string>("");           // "" 미상 | "lt4"(<4m) | "ge4"(≥4m)
   const [analysis, setAnalysis] = useState<{
     drawingInfo?: {
       fileName?: string; layerCount?: number; entityCount?: number;
@@ -60,7 +61,7 @@ export function App() {
   }>({ drawingInfo: null, roomJudgments: [], violations: [] });
 
   // 업로드 파일 + 구조/용도를 FormData로 전송 → 백엔드가 사실 + 방별요구 + (깨끗규격이면) 실 pass/fail 반환
-  const runAnalysis = useCallback((file?: File, structureVal?: string, occupancyVal?: string) => {
+  const runAnalysis = useCallback((file?: File, structureVal?: string, occupancyVal?: string, mountVal?: string) => {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 30000);
     const options: RequestInit = { method: "POST", signal: controller.signal };
@@ -72,6 +73,9 @@ export function App() {
       }
       if (occupancyVal) {
         form.append("occupancy", occupancyVal);
+      }
+      if (mountVal) {
+        form.append("mount", mountVal);
       }
       options.body = form;
     }
@@ -129,14 +133,14 @@ export function App() {
     setZoomLevel((current) => Math.max(current, uploadedDrawingInitialZoom));
     setPanOffset({ x: 0, y: 0 });
     setToast(`${file.name} 분석 중… (도면 정보 추출)`);
-    runAnalysis(file, structure, occupancy);
+    runAnalysis(file, structure, occupancy, mount);
   };
 
   // 건물 구조 변경 → 재판정(구조는 열감지기 기준면적에 영향 = 안전 임계 입력)
   const handleStructureChange = (value: string) => {
     setStructure(value);
     if (uploadedFile) {
-      runAnalysis(uploadedFile, value, occupancy);
+      runAnalysis(uploadedFile, value, occupancy, mount);
     }
   };
 
@@ -144,7 +148,15 @@ export function App() {
   const handleOccupancyChange = (value: string) => {
     setOccupancy(value);
     if (uploadedFile) {
-      runAnalysis(uploadedFile, structure, value);
+      runAnalysis(uploadedFile, structure, value, mount);
+    }
+  };
+
+  // 부착높이(층고) 변경 → 재판정(4m 경계로 감지면적이 갈림 = 안전 임계 입력)
+  const handleMountChange = (value: string) => {
+    setMount(value);
+    if (uploadedFile) {
+      runAnalysis(uploadedFile, structure, occupancy, value);
     }
   };
 
@@ -418,6 +430,15 @@ export function App() {
                     <option value="교육연구시설">교육연구시설</option>
                     <option value="업무시설">업무시설</option>
                   </select>
+                  <select
+                    value={mount}
+                    onChange={(event) => handleMountChange(event.target.value)}
+                    style={{ fontSize: 11.5, padding: "2px 6px", borderRadius: 6, background: "rgba(120,140,170,0.15)", color: "inherit", border: "1px solid rgba(120,140,170,0.35)" }}
+                  >
+                    <option value="">층고 미상</option>
+                    <option value="lt4">천장 4m 미만</option>
+                    <option value="ge4">천장 4m 이상</option>
+                  </select>
                 </div>
                 {(analysis.roomJudgments ?? []).length === 0 ? (
                   <p style={{ fontSize: 11.5, opacity: 0.6 }}>추출된 방 판정 없음(벽 레이어 인식 한계 가능).</p>
@@ -438,7 +459,7 @@ export function App() {
               </div>
             ) : null}
             <p style={{ fontSize: 11.5, margin: 0, lineHeight: 1.6, padding: "10px 12px", borderRadius: 8, background: "rgba(90,120,180,0.12)", color: "#9fb4d8" }}>
-              방 면적은 flood-fill로 추출(신뢰 방만). <b>확정 pass/fail(배치 vs 필요)은 감지기 인식 연결 후</b> — 지금은 요구/조건부만. 구조 미상이면 판정 보류(안전).
+              방 면적은 flood-fill로 추출(신뢰 방만). 실 pass/fail 판정엔 <b>구조·층고</b>가 필요(감지면적 기준을 가름) — 미상이면 판정 보류(안전). 배치 확정은 감지기 인식 연결 후.
             </p>
           </section>
         </aside>

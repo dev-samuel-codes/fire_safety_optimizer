@@ -43,7 +43,7 @@ _DWG2DXF = (os.environ.get("DWG2DXF") or shutil.which("dwg2dxf")
             or "/A.I_DATA/jbnu/miniconda3/envs/dwgtools/bin/dwg2dxf")
 
 
-def _parse_drawing(file_storage, structure=None, occupancy=""):
+def _parse_drawing(file_storage, structure=None, occupancy="", mount_height=3.0):
     """업로드 DWG/DXF → (사실 dict, 방판정 list, dxf_path, 정리목록).
 
     임시파일은 **호출측(analyze)이 정리**한다(같은 파일로 실 판정도 돌려야 하므로).
@@ -102,7 +102,8 @@ def _parse_drawing(file_storage, structure=None, occupancy=""):
         try:
             walls = guess_wall_layers(doc)
             extracted = rooms_from_dxf(doc, walls) if walls else []
-            judgments = judge_rooms(extracted, occupancy=occupancy, structure=structure)
+            judgments = judge_rooms(extracted, occupancy=occupancy, structure=structure,
+                                    mount_height=mount_height or 3.0)
         except Exception as e:
             judgments = [{"room": "", "status": "needs_review", "reason": f"방 판정 생략: {e}"}]
         return facts, judgments, dxf_path, cleanup
@@ -110,22 +111,23 @@ def _parse_drawing(file_storage, structure=None, occupancy=""):
         return {"fileName": name, "error": f"DXF 파싱 실패: {e}"}, [], None, cleanup
 
 
-def _real_violations(dxf_path, structure, occupancy):
+def _real_violations(dxf_path, structure, occupancy, mount_height):
     """깨끗 규격(방 폴리곤 + 소방설비 심볼 추출되는) 도면이면 규칙엔진으로 **실 pass/fail**.
 
-    게이트: (a)구조가 유효(내화/기타)할 때만 — 미상을 내화로 낙관 가정하면 열감지기 과소=false-pass
+    게이트: (a)구조·부착높이가 유효할 때만 — 미상을 낙관 가정하면 감지기 과소=false-pass
     (roomJudgments의 needs_review 규율과 일치). (b)방 sane + 설비 심볼 발견 시에만. 아니면 [](가짜 금지).
-    반환: [{ruleId, status(violation|compliant), severity, description, measured, required, unit}, ...]
+    반환: [{ruleId, status(violation|compliant|not_applicable), severity, description, ...}, ...]
     """
-    if structure not in ("fireproof", "noncombustible", "other"):
-        return []       # 구조 미상 → 실 pass/fail 보류(낙관 가정 금지). roomJudgments로 폴백.
+    if structure not in ("fireproof", "noncombustible", "other") or mount_height is None:
+        return []       # 구조/부착높이 미상 → 실 pass/fail 보류(낙관 가정 금지). roomJudgments로 폴백.
     try:
         from ..ingest.dxf_ir import ingest_and_check, ir_summary
         ann, viols = ingest_and_check(
             dxf_path,
             structure=structure,
             occupancy=occupancy or "common",
-            detector_type="smoke_12")
+            detector_type="smoke_12",
+            mount_height=mount_height)
         by = ir_summary(ann).get("by_category", {})
         n_rooms = by.get("room", 0)
         n_dev = sum(v for k, v in by.items() if k not in ("room", "door"))
@@ -155,11 +157,13 @@ def analyze():
     if "file" in request.files and request.files["file"].filename:
         structure = request.form.get("structure") or None    # "fireproof"|"other"|미상(None)
         occupancy = request.form.get("occupancy") or ""
+        # 부착높이(층고): lt4=3m(<4m) | ge4=5m(≥4m) | 미상=None(실판정은 보류, 요구산정은 3m 가정)
+        mount_height = {"lt4": 3.0, "ge4": 5.0}.get(request.form.get("mount") or "")
         drawing_info, room_judgments, dxf_path, cleanup = _parse_drawing(
-            request.files["file"], structure, occupancy)
+            request.files["file"], structure, occupancy, mount_height or 3.0)
         try:
             if dxf_path:
-                violations = _real_violations(dxf_path, structure, occupancy)
+                violations = _real_violations(dxf_path, structure, occupancy, mount_height)
         finally:
             for p in cleanup:
                 try:
