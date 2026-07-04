@@ -1,39 +1,100 @@
-# FireOpt — 소방 설계 자동 검증
+# FireOpt — 소방 설계 자동 검토
 
-건축 도면(DWG/DXF)을 업로드하면 한국 화재안전기술기준(NFTC) 관점에서 소방 설비를 검토하는 웹앱.
-프론트(React) + 엔진(Python, `backend/`)이 한 레포에 있습니다.
+건축/소방 도면(DWG·DXF)을 올리면 한국 화재안전기술기준(**NFTC**) 관점에서 소방 설비를
+자동 검토하는 웹앱. 프론트(React)와 판정 엔진(Python, `backend/`)이 한 레포에 있습니다.
 
-## 실행 (로컬)
+> **정직성이 최상위 원칙**입니다. 모르는 것은 낙관하지 않고 "확인 필요(needs_review)"로 둡니다 —
+> 위반을 "적합"으로 숨기지(false-pass) 않고, 적법을 "위반"으로 몰지(false-violation)도 않습니다.
+
+---
+
+## 실행 (각자 로컬)
+
+> 지금은 **각자 자기 컴퓨터에서 로컬로 띄우는** 단계입니다(공개 웹사이트로 배포된 게 아님).
+> 필요: **Node 18+**, **Python 3.11+**. (DWG를 쓰려면 아래 `libredwg`도.)
 
 ```bash
-# 1) 백엔드(엔진 API) — backend/에서
+git clone <이 레포>
+cd fire_safety_optimizer
+
+# 터미널 1 — 백엔드(판정 엔진 API)
 cd backend
 pip install -r requirements.txt
 PYTHONPATH=. python -m fireval.api.server        # http://127.0.0.1:8900
-#   DWG 지원: dwg2dxf(libredwg)가 PATH에 있거나 DWG2DXF 환경변수로 지정
 
-# 2) 프론트 — 루트에서 (새 터미널)
+# 터미널 2 — 프론트 (레포 루트에서)
 npm install
-npm run dev                                       # http://localhost:5173  (/api → :8900 프록시)
+npm run dev                                       # http://localhost:5173  ( /api → :8900 프록시 )
 ```
 
-브라우저에서 http://localhost:5173 접속.
+브라우저에서 **http://localhost:5173** 접속.
 
-## 지금 무엇이 작동하나 (정직하게)
+**DWG 지원**: DWG→DXF 변환기 `dwg2dxf`(libredwg)가 시스템에 있어야 합니다
+(`apt install libredwg-tools` / `brew install libredwg`, 또는 `DWG2DXF` 환경변수로 경로 지정).
+없으면 **DWG 업로드는 안내 메시지로 실패하고 DXF는 정상 동작**합니다.
+
+---
+
+## 사용법
+
+1. 좌측 **[파일 추가]** 로 도면(DWG·DXF) 업로드 → 뷰어에 렌더되고, 우측에 이 도면의 **실제 사실**
+   (레이어·소방 설비 레이어·방 이름)이 뜹니다.
+2. 우측 "법규 판정 (NFTC)" 패널에서 **건물구조 / 용도 / 층고**를 고릅니다.
+   → 이 세 값은 감지기 감지면적·스프링클러 반경 기준을 가르는 **안전 임계 입력**이라,
+   미상으로 두면 해당 판정은 "확인 필요"로 보류됩니다(낙관 가정 안 함).
+3. 결과를 읽습니다(두 경로 — 아래 참고).
+
+### 권장 도면 조건
+- **건축 평면도(벽 위주)** — 가구·집기·설비 배관이 없을수록 방·면적 자동추출이 정확
+- 방 이름이 **문자(텍스트)** 로 표기, 소방 설비가 **레이어로 구분**, **1개 층** 평면
+
+---
+
+## 지금 무엇이 되나 (정직하게)
 
 **🟢 작동**
-- DWG/DXF 업로드 + 브라우저 렌더(뷰어)
-- 업로드 도면의 **실제 사실 추출**: 레이어·엔티티 수·소방 설비 레이어·방 이름 (`POST /api/analyze`)
-- 사실 요약 `.md` 다운로드 (보고서 / 내보내기)
+- DWG/DXF 업로드 + 브라우저 렌더
+- 도면의 **실제 사실 추출**(레이어·소방레이어·실명 — 가구/집기 라벨은 걸러냄)
+- **방 면적 자동 산출**(raster flood-fill) + 신뢰도 게이트 + **2방법 교차검증**(raster↔vector 불일치=보류)
+- **NFTC 감지기 요구 산정**: "이 방 46㎡ → 연기감지기 N개 필요" (근거 조항 인용)
+- **실 합격/불합격 판정**(깨끗 규격 도면 한정 — 아래) : 위반 / 적합 / 확인 필요
+- 도면 사실 요약 `.md` 다운로드
 
-**🟡 준비 중**
-- **NFTC 적정성 판정**(방별 필요 감지기 수 등) — 방 면적·설비 심볼 자동 인식의 신뢰성 확보 후 연결
-- 저장 · 프로젝트 관리 · 좌측 네비 · DWG 주석 내보내기
+**🔴 아직 (미완)**
+- **실무 도면의 감지기 인식(B)** — 임의 설계사 도면의 감지기 심볼 **종류·위치 검출**.
+  이게 되면 실무 도면도 "배치 2개 < 필요 3개 → 위반" 확정 판정. (가장 어려운 R&D)
+- 저장 · 프로젝트 관리 · 좌측 네비 · 도면 주석 내보내기
+- 공개 배포(호스팅)
+
+### 판정 두 경로
+| 입력 도면 | 결과 |
+|---|---|
+| **깨끗 규격** (방=경계 폴리라인 + 감지기=식별 가능 블록) | **실 pass/fail** — 배치 vs 필요 비교(위반/적합/확인필요) |
+| **실무 도면** (임의 레이어·감지기 미인식) | **요구 산정 + needs_review** — 감지기 인식(B) 연결 후 실판정 |
+
+깨끗 규격이 아니거나 구조·층고가 미상이면 **가짜 판정을 내지 않고** 요구 산정/확인 필요로 폴백합니다.
+
+### 판정 범위 (스코핑)
+평면 도형으로 판정 가능한 **기하 규칙 subset**만 다룹니다: 감지기 감지면적 · 경계구역 · 스프링클러/소화전
+반경 · 소화기 보행거리 등. **수원·펌프·관경·수직이격 등 2D 평면도로 판정 불가한 규칙은 범위 밖**입니다
+("전체 소방 적법성 판별기"가 아니라 "평면 기하 규칙 자동 검토").
+
+---
 
 ## 구조
 ```
-src/               프론트 (React + Vite + TypeScript)
-backend/fireval/   엔진 (Python): api(Flask) · ingest(도면 파싱) · engine(NFTC 규칙) · schema · report
+src/                프론트 (React + Vite + TypeScript) — CAD 뷰어는 LibreDWG(WASM)
+backend/
+  requirements.txt  런타임 의존성 (flask·ezdxf·numpy·scipy·Pillow·shapely·networkx)
+  fireval/          판정 엔진: api(Flask) · ingest(도면→IR) · engine(NFTC 규칙) · schema · report
+  fireopt/          기하/상수(감지면적·반경 등) · 도면 로더
 ```
 
 API 계약·통합 설계는 [`backend/INTEGRATION.md`](backend/INTEGRATION.md) 참고.
+
+---
+
+## 참고
+- 실판정은 규칙 엔진(`shapely`/`networkx`)을 쓰며, `pip install -r requirements.txt`만으로 동작합니다
+  (IFC 전용 `ifcopenshell`은 필요할 때만 lazy 로드 — DXF 경로엔 불필요).
+- DWG는 시스템 `libredwg` 필요(위 참고). DXF는 추가 설치 없이 동작.
