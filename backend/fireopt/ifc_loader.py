@@ -24,11 +24,18 @@ import warnings
 from dataclasses import dataclass, field
 
 import numpy as np
-import ifcopenshell
-import ifcopenshell.geom
-import ifcopenshell.util.unit
-import ifcopenshell.util.shape
-import ifcopenshell.util.placement
+
+# ifcopenshell은 IFC 파싱 함수에서만 필요(설치 까다로움). Room/BuildingModel 데이터클래스나
+# DXF 경로(dxf_loader가 이 모듈에서 Room/BuildingModel만 import)는 ifcopenshell 없이도 동작해야
+# 하므로 lazy로 둔다. IFC 로딩 함수는 호출 시 ifcopenshell을 요구한다.
+try:
+    import ifcopenshell
+    import ifcopenshell.geom
+    import ifcopenshell.util.unit
+    import ifcopenshell.util.shape
+    import ifcopenshell.util.placement
+except ImportError:              # ifcopenshell 미설치 → IFC 경로만 불가, DXF/데이터클래스는 정상
+    ifcopenshell = None
 
 from shapely.geometry import Polygon, MultiPoint, Point
 from shapely.ops import unary_union
