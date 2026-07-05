@@ -3,7 +3,6 @@ import {
   CadViewer,
   resolveCadColor,
   type CadLoadProgress,
-  type CadViewerLoadResult,
 } from "@flyfish-dev/cad-viewer";
 import "@flyfish-dev/cad-viewer/style.css";
 import type { CadBounds, CadDocument, CadEntity, CadPoint2D, CadPoint3D } from "@flyfish-dev/cad-viewer";
@@ -76,7 +75,6 @@ export function CadFileViewer({
   const acceptsViewerEventsRef = useRef(false);
   const [loadState, setLoadState] = useState<LoadState>("idle");
   const [progress, setProgress] = useState<CadLoadProgress | null>(null);
-  const [summary, setSummary] = useState<CadViewerLoadResult["summary"] | null>(null);
   const [cadDocument, setCadDocument] = useState<CadDocument | null>(null);
   const [errorMessage, setErrorMessage] = useState("");
 
@@ -150,7 +148,6 @@ export function CadFileViewer({
       acceptsViewerEventsRef.current = false;
       setLoadState("idle");
       setProgress(null);
-      setSummary(null);
       setCadDocument(null);
       setErrorMessage("");
       onDrawingInfoChange?.(null);
@@ -164,7 +161,6 @@ export function CadFileViewer({
     acceptsViewerEventsRef.current = true;
     setLoadState("loading");
     setProgress({ phase: "read", message: "파일 읽는 중", percent: 5 });
-    setSummary(null);
     setCadDocument(null);
     setErrorMessage("");
     onDrawingInfoChange?.(null);
@@ -210,7 +206,6 @@ export function CadFileViewer({
 
       window.clearTimeout(timeoutId);
       acceptsViewerEventsRef.current = false;
-      setSummary(result.summary);
       setCadDocument(result.document);
       setLoadState("ready");
       onDrawingInfoChange?.({
@@ -316,13 +311,6 @@ export function CadFileViewer({
         </div>
       ) : null}
 
-      {summary ? (
-        <div className="cad-render-badge">
-          <span>{summary.format.toUpperCase()}</span>
-          <b>{summary.entityCount.toLocaleString()} entities</b>
-          <em>{summary.layerCount.toLocaleString()} layers</em>
-        </div>
-      ) : null}
     </div>
   );
 }
