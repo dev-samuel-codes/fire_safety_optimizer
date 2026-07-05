@@ -335,7 +335,6 @@ export function App() {
         </aside>
 
         <section className="canvas-panel">
-          <Toolbar activeTool={activeTool} onToolAction={handleToolAction} />
           <div
             ref={drawingCardRef}
             className={`drawing-card autocad-space tool-${activeTool} ${dragState ? "is-panning" : ""}`}
@@ -356,6 +355,19 @@ export function App() {
                 onDrawingInfoChange={setViewerDrawingInfo}
               />
             ) : null}
+            <button
+              type="button"
+              className="fit-floating-button"
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={(event) => {
+                event.stopPropagation();
+                handleToolAction("fit");
+              }}
+              aria-label="도면 맞춤"
+            >
+              <Icon name="fit" />
+              <span>맞춤</span>
+            </button>
           </div>
         </section>
 
@@ -772,29 +784,6 @@ function ActionDialog({
         ) : null}
 
       </section>
-    </div>
-  );
-}
-
-function Toolbar({
-  activeTool,
-  onToolAction,
-}: {
-  activeTool: ToolId;
-  onToolAction: (toolId: ToolId) => void;
-}) {
-  return (
-    <div className="toolbar">
-      {toolDefinitions.map((tool) => (
-        <button
-          key={tool.id}
-          className={activeTool === tool.id ? "active" : ""}
-          onClick={() => onToolAction(tool.id)}
-        >
-          <Icon name={tool.icon} />
-          <span>{tool.label}</span>
-        </button>
-      ))}
     </div>
   );
 }
