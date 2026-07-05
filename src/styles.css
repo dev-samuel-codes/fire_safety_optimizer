@@ -192,36 +192,11 @@ svg {
 
 .workspace {
   display: grid;
-  grid-template-columns: 76px 286px minmax(640px, 1fr) 380px;
+  grid-template-columns: 286px minmax(640px, 1fr) 380px;
   gap: 10px;
   min-height: 0;
-  padding: 0 12px 0 0;
+  padding: 0 12px;
   counter-reset: overview-section;
-}
-
-.sidenav {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 78px 10px 0 12px;
-}
-
-.sidenav button {
-  display: grid;
-  gap: 5px;
-  place-items: center;
-  min-height: 62px;
-  border: 0;
-  border-radius: 10px;
-  background: transparent;
-  color: #b6c3d4;
-  font-size: 12px;
-}
-
-.sidenav button.active {
-  color: #061108;
-  background: linear-gradient(180deg, rgba(118, 223, 109, 0.96), rgba(76, 186, 91, 0.84));
-  box-shadow: 0 0 22px rgba(118, 223, 109, 0.18);
 }
 
 .left-panel,
@@ -1397,16 +1372,6 @@ svg {
   .workspace {
     grid-template-columns: 1fr;
     padding: 0 12px 44px;
-  }
-
-  .sidenav {
-    flex-direction: row;
-    overflow-x: auto;
-    padding: 0;
-  }
-
-  .sidenav button {
-    min-width: 74px;
   }
 
   .canvas-panel {

@@ -32,15 +32,6 @@ const toolDefinitions: Array<{ id: ToolId; label: string; icon: string; command:
   { id: "fit", label: "맞춤", icon: "fit", command: "ZOOM EXTENTS" },
 ];
 
-const navItems = [
-  { label: "프로젝트", icon: "folder" },
-  { label: "도면 관리", icon: "plan", active: true },
-  { label: "분석", icon: "spark" },
-  { label: "최적화", icon: "optimize" },
-  { label: "보고서", icon: "report" },
-  { label: "설정", icon: "settings" },
-];
-
 export function App() {
   const [toast, setToast] = useState("대기 중 · 도면을 업로드해주세요");
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
@@ -267,7 +258,6 @@ export function App() {
         onTopAction={handleTopAction}
       />
       <div className="workspace">
-        <SideNav />
         <aside className="left-panel">
           <section className="panel-block">
             <div className="panel-heading">
@@ -733,24 +723,6 @@ function ActionDialog({
         ) : null}
       </section>
     </div>
-  );
-}
-
-function SideNav() {
-  return (
-    <nav className="sidenav" aria-label="주요 메뉴">
-      {navItems.map((item) => (
-        <button
-          key={item.label}
-          className={item.active ? "active" : ""}
-          disabled={!item.active}
-          title={item.active ? undefined : "준비 중"}
-        >
-          <Icon name={item.icon} />
-          <span>{item.label}</span>
-        </button>
-      ))}
-    </nav>
   );
 }
 
