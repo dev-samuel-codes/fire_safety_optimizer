@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
   CadViewer,
   resolveCadColor,
@@ -35,6 +35,7 @@ const maximumCanvasPixelRatio = 6;
 const maximumCanvasBackingStorePixels = 48_000_000;
 const minimumZoomResolutionFactor = 0.25;
 const maximumZoomOutResolutionBoost = 2;
+const viewportCullingPaddingPx = 96;
 const cadColorOptions = {
   background: "#07111d",
   foreground: "#d7e6f8",
@@ -57,6 +58,17 @@ interface RenderDetailStyle {
   minCurveRadius: number;
   pointRadius: number;
   textMinSize: number;
+}
+
+interface RenderItem {
+  entity: CadEntity;
+  transform: Transform2D;
+  bounds: CadBounds | null;
+}
+
+interface RenderScene {
+  bounds: CadBounds | null;
+  items: RenderItem[];
 }
 
 export function CadFileViewer({
@@ -327,6 +339,7 @@ function DetailedCadDocumentCanvas({
   panOffset: { x: number; y: number };
 }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const scene = useMemo(() => buildRenderScene(document), [document]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -350,7 +363,7 @@ function DetailedCadDocumentCanvas({
       context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
       context.imageSmoothingEnabled = false;
       context.clearRect(0, 0, width, height);
-      renderCadDocument(context, document, width, height, zoomLevel, resolutionBaselineZoomLevel, panOffset);
+      renderCadDocument(context, document, scene, width, height, zoomLevel, resolutionBaselineZoomLevel, panOffset);
     };
 
     draw();
@@ -361,7 +374,7 @@ function DetailedCadDocumentCanvas({
       resizeObserver.disconnect();
       window.removeEventListener("resize", draw);
     };
-  }, [document, zoomLevel, resolutionBaselineZoomLevel, panOffset]);
+  }, [document, scene, zoomLevel, resolutionBaselineZoomLevel, panOffset]);
 
   return <canvas ref={canvasRef} className="detailed-cad-canvas" aria-label="상세 CAD 도면 렌더링" />;
 }
@@ -369,13 +382,14 @@ function DetailedCadDocumentCanvas({
 function renderCadDocument(
   context: CanvasRenderingContext2D,
   document: CadDocument,
+  scene: RenderScene,
   width: number,
   height: number,
   zoomLevel: number,
   resolutionBaselineZoomLevel: number,
   panOffset: { x: number; y: number },
 ) {
-  const bounds = computeDenseDocumentBounds(document);
+  const bounds = scene.bounds;
   if (!bounds || !isFiniteBounds(bounds)) {
     return;
   }
@@ -399,11 +413,126 @@ function renderCadDocument(
   context.lineJoin = "round";
   context.globalCompositeOperation = "source-over";
   const detailStyle = getRenderDetailStyle(zoomLevel, resolutionBaselineZoomLevel);
-  drawEntities(context, document, document.entities, identityTransform(), screen, scale, detailStyle, 0);
-  for (const page of document.pages ?? []) {
-    drawEntities(context, document, page.entities, identityTransform(), screen, scale, detailStyle, 0);
-  }
+  const visibleWorldBounds = getVisibleWorldBounds(width, height, center, scale, panOffset);
+  drawRenderItems(context, document, scene.items, visibleWorldBounds, screen, scale, detailStyle);
   context.restore();
+}
+
+function buildRenderScene(document: CadDocument): RenderScene {
+  const items: RenderItem[] = [];
+  collectRenderItems(document, document.entities, identityTransform(), items, 0);
+  for (const page of document.pages ?? []) {
+    collectRenderItems(document, page.entities, identityTransform(), items, 0);
+  }
+
+  return {
+    bounds: computeDenseRenderBounds(items) ?? computeDenseDocumentBounds(document),
+    items,
+  };
+}
+
+function collectRenderItems(
+  document: CadDocument,
+  entities: CadEntity[],
+  transform: Transform2D,
+  items: RenderItem[],
+  depth: number,
+) {
+  if (depth > 8) {
+    return;
+  }
+
+  for (const entity of entities) {
+    const layer = entity.layer ? document.layers[entity.layer] : undefined;
+    if (layer?.isVisible === false || layer?.isFrozen) {
+      continue;
+    }
+
+    if (entity.kind === "insert" || entity.type.toUpperCase() === "INSERT") {
+      const blockName = entity.blockName ?? entity.name;
+      const block = blockName ? document.blocks[blockName] : undefined;
+      if (block) {
+        collectRenderItems(document, block.entities, multiplyTransform(transform, insertTransform(entity)), items, depth + 1);
+      }
+      continue;
+    }
+
+    items.push({
+      entity,
+      transform,
+      bounds: computeEntityRenderBounds(entity, transform),
+    });
+  }
+}
+
+function drawRenderItems(
+  context: CanvasRenderingContext2D,
+  document: CadDocument,
+  items: RenderItem[],
+  visibleWorldBounds: CadBounds,
+  screen: (point: CadPoint2D) => CadPoint2D,
+  scale: number,
+  detailStyle: RenderDetailStyle,
+) {
+  for (const item of items) {
+    if (item.bounds && !boundsIntersect(item.bounds, visibleWorldBounds)) {
+      continue;
+    }
+
+    drawEntity(context, document, item.entity, item.transform, screen, scale, detailStyle, 0);
+  }
+}
+
+function computeDenseRenderBounds(items: RenderItem[]): CadBounds | null {
+  const points: CadPoint3D[] = [];
+  for (const item of items) {
+    if (!item.bounds) {
+      continue;
+    }
+
+    appendPoint(points, { x: item.bounds.minX, y: item.bounds.minY });
+    appendPoint(points, { x: item.bounds.maxX, y: item.bounds.maxY });
+  }
+
+  return computeDenseBoundsFromPoints(points);
+}
+
+function computeEntityRenderBounds(entity: CadEntity, transform: Transform2D): CadBounds | null {
+  const points: CadPoint3D[] = [];
+  collectEntityPoints(entity, points);
+  if (!points.length) {
+    return null;
+  }
+
+  return computeBoundsFromPoints(points.map((point) => applyTransform(transform, point)));
+}
+
+function getVisibleWorldBounds(
+  width: number,
+  height: number,
+  center: CadPoint2D,
+  scale: number,
+  panOffset: { x: number; y: number },
+): CadBounds {
+  const padding = viewportCullingPaddingPx;
+  const left = center.x + (-padding - width / 2 - panOffset.x) / scale;
+  const right = center.x + (width + padding - width / 2 - panOffset.x) / scale;
+  const top = center.y - (-padding - height / 2 - panOffset.y) / scale;
+  const bottom = center.y - (height + padding - height / 2 - panOffset.y) / scale;
+
+  return {
+    minX: Math.min(left, right),
+    minY: Math.min(bottom, top),
+    maxX: Math.max(left, right),
+    maxY: Math.max(bottom, top),
+  };
+}
+
+function boundsIntersect(first: CadBounds, second: CadBounds) {
+  return first.maxX >= second.minX
+    && first.minX <= second.maxX
+    && first.maxY >= second.minY
+    && first.minY <= second.maxY;
 }
 
 function getCanvasLayout(host: HTMLElement, zoomLevel: number, resolutionBaselineZoomLevel: number) {
@@ -758,6 +887,10 @@ function computeDenseDocumentBounds(document: CadDocument): CadBounds | null {
     collectEntitiesPoints(page.entities, points);
   }
 
+  return computeDenseBoundsFromPoints(points);
+}
+
+function computeDenseBoundsFromPoints(points: CadPoint3D[]): CadBounds | null {
   if (points.length < 4) {
     return null;
   }
@@ -779,6 +912,21 @@ function computeDenseDocumentBounds(document: CadDocument): CadBounds | null {
     minY: ys[lowIndex],
     maxX: xs[highXIndex],
     maxY: ys[highYIndex],
+  };
+}
+
+function computeBoundsFromPoints(points: CadPoint2D[]): CadBounds | null {
+  const xs = points.map((point) => point.x).filter(Number.isFinite);
+  const ys = points.map((point) => point.y).filter(Number.isFinite);
+  if (!xs.length || !ys.length) {
+    return null;
+  }
+
+  return {
+    minX: Math.min(...xs),
+    minY: Math.min(...ys),
+    maxX: Math.max(...xs),
+    maxY: Math.max(...ys),
   };
 }
 
@@ -805,6 +953,7 @@ function collectEntityPoints(entity: CadEntity, points: CadPoint3D[]) {
   appendPoints(points, entity.points);
   appendPoints(points, entity.controlPoints);
   appendPoints(points, entity.fitPoints);
+  appendPoint(points, entity.majorAxisEndPoint);
 
   for (const loop of entity.loops ?? []) {
     appendPoints(points, loop.vertices);
