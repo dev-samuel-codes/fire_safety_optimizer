@@ -350,6 +350,7 @@ export function App() {
                 visibleLayerIds={NO_VISIBLE_LAYERS}
                 opacity={100}
                 zoomLevel={zoomLevel}
+                resolutionBaselineZoomLevel={uploadedDrawingInitialZoom}
                 panOffset={panOffset}
                 onStatusChange={updateStatus}
                 onDrawingInfoChange={setViewerDrawingInfo}
