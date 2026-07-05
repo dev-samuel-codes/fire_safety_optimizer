@@ -9,6 +9,15 @@ type ToolId = "pan" | "zoomIn" | "zoomOut" | "fit";
 type DialogType = "save" | "export" | null;
 type PanOffset = { x: number; y: number };
 type DragState = PanOffset & { pointerId: number; startX: number; startY: number };
+type PanelWidths = { left: number; right: number };
+type ColumnResizeSide = "left" | "right";
+type ColumnResizeState = {
+  pointerId: number;
+  side: ColumnResizeSide;
+  startX: number;
+  leftWidth: number;
+  rightWidth: number;
+};
 type DrawingInfo = {
   fileName?: string;
   layerCount?: number;
@@ -25,6 +34,13 @@ const zoomButtonStep = 25;
 const zoomWheelStep = 10;
 const uploadedDrawingInitialZoom = 150;
 const designViewport = { width: 1280, height: 720 };
+const defaultPanelWidths: PanelWidths = { left: 230, right: 240 };
+const panelResizeLimits = {
+  leftMin: 170,
+  rightMin: 180,
+  sideMax: 420,
+  centerMin: 420,
+};
 
 const toolDefinitions: Array<{ id: ToolId; label: string; icon: string; command: string }> = [
   { id: "pan", label: "이동", icon: "move", command: "PAN" },
@@ -41,7 +57,10 @@ export function App() {
   const [zoomLevel, setZoomLevel] = useState(100);
   const [panOffset, setPanOffset] = useState<PanOffset>({ x: 0, y: 0 });
   const [dragState, setDragState] = useState<DragState | null>(null);
+  const [panelWidths, setPanelWidths] = useState<PanelWidths>(defaultPanelWidths);
+  const [columnResize, setColumnResize] = useState<ColumnResizeState | null>(null);
   const [dialog, setDialog] = useState<DialogType>(null);
+  const workspaceRef = useRef<HTMLDivElement | null>(null);
   const drawingCardRef = useRef<HTMLDivElement | null>(null);
   const zoomLevelRef = useRef(zoomLevel);
 
@@ -254,6 +273,53 @@ export function App() {
     }
   };
 
+  const handleColumnResizeStart = (side: ColumnResizeSide, event: PointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    setColumnResize({
+      pointerId: event.pointerId,
+      side,
+      startX: event.clientX,
+      leftWidth: panelWidths.left,
+      rightWidth: panelWidths.right,
+    });
+  };
+
+  const handleColumnResizeMove = (event: PointerEvent<HTMLDivElement>) => {
+    if (!columnResize || columnResize.pointerId !== event.pointerId) {
+      return;
+    }
+
+    if ((event.buttons & 1) !== 1) {
+      setColumnResize(null);
+      return;
+    }
+
+    event.preventDefault();
+    const scale = viewportFrame.scale || 1;
+    const deltaX = (event.clientX - columnResize.startX) / scale;
+    setPanelWidths(getResizedPanelWidths(columnResize, deltaX, workspaceRef.current, scale));
+  };
+
+  const stopColumnResize = (event: PointerEvent<HTMLDivElement>) => {
+    if (columnResize?.pointerId === event.pointerId) {
+      setColumnResize(null);
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      }
+    }
+  };
+
+  const workspaceStyle = {
+    "--left-panel-width": `${panelWidths.left}px`,
+    "--right-panel-width": `${panelWidths.right}px`,
+  } as CSSProperties;
+
   return (
     <div
       className="viewport-shell"
@@ -267,7 +333,11 @@ export function App() {
         selectedFileName={uploadedFile?.name}
         onTopAction={handleTopAction}
       />
-      <div className="workspace">
+      <div
+        ref={workspaceRef}
+        className={`workspace ${columnResize ? "is-resizing-columns" : ""}`}
+        style={workspaceStyle}
+      >
         <aside className="left-panel">
           <section className="panel-block">
             <div className="panel-heading">
@@ -334,6 +404,17 @@ export function App() {
           ) : null}
         </aside>
 
+        <div
+          className={`column-resize-handle ${columnResize?.side === "left" ? "active" : ""}`}
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="도면 관리 구역 폭 조절"
+          onPointerDown={(event) => handleColumnResizeStart("left", event)}
+          onPointerMove={handleColumnResizeMove}
+          onPointerUp={stopColumnResize}
+          onPointerCancel={stopColumnResize}
+        />
+
         <section className="canvas-panel">
           <div
             ref={drawingCardRef}
@@ -370,6 +451,17 @@ export function App() {
             </button>
           </div>
         </section>
+
+        <div
+          className={`column-resize-handle ${columnResize?.side === "right" ? "active" : ""}`}
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="법규 판정 구역 폭 조절"
+          onPointerDown={(event) => handleColumnResizeStart("right", event)}
+          onPointerMove={handleColumnResizeMove}
+          onPointerUp={stopColumnResize}
+          onPointerCancel={stopColumnResize}
+        />
 
         <aside className="right-panel">
           {!shouldShowReport ? (
@@ -595,6 +687,55 @@ function formatFileSize(size: number) {
 
 function clampZoom(value: number) {
   return Math.max(zoomMin, Math.round(value));
+}
+
+function getResizedPanelWidths(
+  resize: ColumnResizeState,
+  deltaX: number,
+  workspace: HTMLDivElement | null,
+  viewportScale: number,
+): PanelWidths {
+  const availableWidth = getWorkspaceContentWidth(workspace, viewportScale);
+  const maxLeft = Math.min(
+    panelResizeLimits.sideMax,
+    availableWidth - resize.rightWidth - panelResizeLimits.centerMin,
+  );
+  const maxRight = Math.min(
+    panelResizeLimits.sideMax,
+    availableWidth - resize.leftWidth - panelResizeLimits.centerMin,
+  );
+
+  if (resize.side === "left") {
+    return {
+      left: clampPanelWidth(resize.leftWidth + deltaX, panelResizeLimits.leftMin, maxLeft),
+      right: resize.rightWidth,
+    };
+  }
+
+  return {
+    left: resize.leftWidth,
+    right: clampPanelWidth(resize.rightWidth - deltaX, panelResizeLimits.rightMin, maxRight),
+  };
+}
+
+function getWorkspaceContentWidth(workspace: HTMLDivElement | null, viewportScale: number) {
+  if (!workspace || typeof window === "undefined") {
+    return designViewport.width
+      - panelResizeLimits.leftMin
+      - panelResizeLimits.rightMin;
+  }
+
+  const style = window.getComputedStyle(workspace);
+  const scale = viewportScale || 1;
+  const width = workspace.getBoundingClientRect().width / scale;
+  const paddingX = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
+  const handleWidth = parseFloat(style.getPropertyValue("--resize-handle-width")) || 0;
+  return width - paddingX - handleWidth * 2;
+}
+
+function clampPanelWidth(value: number, min: number, max: number) {
+  const safeMax = Math.max(min, max);
+  return Math.round(Math.min(Math.max(value, min), safeMax));
 }
 
 function getWheelZoomLevel(current: number, deltaY: number) {

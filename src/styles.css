@@ -16,6 +16,10 @@
   --compact-label-size: clamp(11px, 1.5vh, 12.5px);
   --compact-body-size: clamp(10.5px, 1.42vh, 11.5px);
   --compact-button-size: clamp(10.5px, 1.35vh, 11px);
+  --left-panel-width: 230px;
+  --right-panel-width: 240px;
+  --center-panel-min-width: 420px;
+  --resize-handle-width: clamp(8px, 0.8vw, 12px);
   --report-tight-gap: clamp(4px, 0.6vh, 7px);
   --report-tight-padding: clamp(7px, 1vh, 10px);
   --report-preview-height: clamp(132px, 23vh, 220px);
@@ -245,12 +249,22 @@ svg {
 
 .workspace {
   display: grid;
-  grid-template-columns: clamp(210px, 18vw, 250px) minmax(0, 1fr) clamp(220px, 19vw, 260px);
-  gap: var(--app-gap);
+  grid-template-columns:
+    var(--left-panel-width)
+    var(--resize-handle-width)
+    minmax(var(--center-panel-min-width), 1fr)
+    var(--resize-handle-width)
+    var(--right-panel-width);
+  gap: 0;
   min-height: 0;
   overflow: hidden;
   padding: 0 12px;
   counter-reset: overview-section;
+}
+
+.workspace.is-resizing-columns {
+  cursor: col-resize;
+  user-select: none;
 }
 
 .left-panel,
@@ -260,7 +274,35 @@ svg {
 }
 
 .left-panel {
-  overflow: visible;
+  overflow: hidden;
+}
+
+.column-resize-handle {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  min-width: var(--resize-handle-width);
+  height: 100%;
+  border: 0;
+  background: transparent;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.column-resize-handle::before {
+  width: 1px;
+  margin: 2px 0 10px;
+  border-radius: 999px;
+  background: rgba(152, 164, 181, 0.18);
+  content: "";
+  transition: background 0.15s ease, box-shadow 0.15s ease;
+}
+
+.column-resize-handle:hover::before,
+.column-resize-handle.active::before {
+  background: var(--overview-green-soft);
+  box-shadow: 0 0 0 2px rgba(118, 223, 109, 0.08);
 }
 
 .left-panel .panel-block {
@@ -1448,7 +1490,7 @@ svg {
   grid-template-rows: minmax(0, 1fr) auto;
   gap: var(--app-gap);
   min-height: 0;
-  overflow: visible;
+  overflow: hidden;
   padding: 0;
 }
 
