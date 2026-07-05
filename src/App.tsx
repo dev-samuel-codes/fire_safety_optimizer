@@ -6,7 +6,7 @@ import type { LayerId } from "./types";
 const NO_VISIBLE_LAYERS = new Set<LayerId>();
 
 type ToolId = "pan" | "zoomIn" | "zoomOut" | "fit";
-type DialogType = "save" | "export" | null;
+type DialogType = "export" | null;
 type PanOffset = { x: number; y: number };
 type DragState = PanOffset & { pointerId: number; startX: number; startY: number };
 type PanelWidths = { left: number; right: number };
@@ -143,11 +143,6 @@ export function App() {
   };
 
   const handleTopAction = (action: Exclude<DialogType, null>) => {
-    if (action === "save") {
-      setToast("저장 기능은 준비 중입니다.");
-      return;
-    }
-
     openDialog(action);
   };
 
@@ -670,8 +665,14 @@ function TopBar({
         <span>{selectedFileName ?? "도면 파일을 선택해주세요"}</span>
       </div>
       <nav className="top-actions">
-        <button onClick={() => onTopAction("save")}>저장</button>
-        <button className="export" onClick={() => onTopAction("export")}>내보내기</button>
+        <button
+          className="round"
+          onClick={() => onTopAction("export")}
+          aria-label="공유"
+          title="공유"
+        >
+          <Icon name="share" />
+        </button>
       </nav>
     </header>
   );
@@ -886,12 +887,12 @@ function ActionDialog({
 }) {
   const factsMarkdown = getFactsMarkdown(fileName, drawingInfo, analysisError);
 
-  if (!dialog || dialog === "save") {
+  if (!dialog) {
     return null;
   }
 
   const title = {
-    export: "내보내기",
+    export: "공유",
   }[dialog];
 
   return (
@@ -973,6 +974,8 @@ function Icon({ name }: { name: string }) {
       return <svg viewBox="0 0 24 24" {...common}><path d="M5 12h14M13 6l6 6-6 6" /></svg>;
     case "download":
       return <svg viewBox="0 0 24 24" {...common}><path d="M12 3v12" /><path d="m7 10 5 5 5-5" /><path d="M5 21h14" /></svg>;
+    case "share":
+      return <svg viewBox="0 0 24 24" {...common}><circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" /><path d="m8.6 10.6 6.8-4.2M8.6 13.4l6.8 4.2" /></svg>;
     case "shield":
       return <svg viewBox="0 0 24 24" {...common}><path d="M12 3 5 6v5c0 5 3 8 7 10 4-2 7-5 7-10V6Z" /><path d="m9 12 2 2 4-5" /></svg>;
     default:
