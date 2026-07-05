@@ -32,6 +32,10 @@
   --overview-panel-strong: rgba(8, 16, 24, 0.92);
   --overview-line: rgba(152, 164, 181, 0.34);
   --overview-line-soft: rgba(152, 164, 181, 0.18);
+  --floating-control-bg: rgba(20, 24, 30, 0.94);
+  --floating-control-bg-hover: rgba(31, 36, 44, 0.96);
+  --floating-control-border: rgba(174, 186, 204, 0.36);
+  --floating-control-ink: #d7dde6;
   --overview-green: #76df6d;
   --overview-green-soft: rgba(118, 223, 109, 0.34);
   --overview-red: #ff554f;
@@ -676,13 +680,11 @@ svg {
   gap: 6px;
   height: clamp(32px, 4.5vh, 38px);
   min-width: clamp(74px, 6.6vw, 86px);
-  border-radius: 8px;
-  border: 1px solid var(--overview-green-soft);
+  border-radius: 999px;
+  border: 1px solid var(--floating-control-border);
   padding: 0 12px;
-  color: var(--overview-green);
-  background:
-    radial-gradient(circle at 18% 10%, rgba(118, 223, 109, 0.18), transparent 7rem),
-    rgba(5, 16, 13, 0.94);
+  color: var(--floating-control-ink);
+  background: var(--floating-control-bg);
   box-shadow:
     inset 0 0 0 1px rgba(255, 255, 255, 0.04),
     0 10px 26px rgba(0, 0, 0, 0.32);
@@ -696,9 +698,7 @@ svg {
 }
 
 .fit-floating-button:hover {
-  background:
-    radial-gradient(circle at 18% 10%, rgba(118, 223, 109, 0.24), transparent 7rem),
-    rgba(9, 28, 21, 0.96);
+  background: var(--floating-control-bg-hover);
 }
 
 .floor-controls {
