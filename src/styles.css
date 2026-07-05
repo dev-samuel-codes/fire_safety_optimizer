@@ -808,41 +808,6 @@ svg {
   transition: width 180ms ease;
 }
 
-.cad-render-badge {
-  position: absolute;
-  left: 16px;
-  top: 16px;
-  z-index: 6;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  border: 1px solid var(--overview-line);
-  border-radius: 10px;
-  padding: 8px 10px;
-  background: rgba(2, 7, 12, 0.82);
-  color: var(--overview-ink);
-  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.24);
-}
-
-.cad-render-badge span {
-  border-radius: 5px;
-  padding: 3px 7px;
-  background: var(--overview-blue);
-  color: #07101b;
-  font-size: 12px;
-  font-weight: 900;
-}
-
-.cad-render-badge b,
-.cad-render-badge em {
-  font-size: 12px;
-  font-style: normal;
-}
-
-.cad-render-badge em {
-  color: #9fb0c3;
-}
-
 .model-grid-overlay {
   position: absolute;
   inset: 0;
