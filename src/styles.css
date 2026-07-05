@@ -345,6 +345,10 @@ svg {
   color: var(--overview-green);
 }
 
+.analysis-panel h3 {
+  font-size: var(--compact-heading-size);
+}
+
 .panel-heading h2,
 .panel-heading h3,
 .recommend-panel h3 {
@@ -1120,14 +1124,14 @@ svg {
 .report-summary span,
 .export-panel span {
   color: #91a5bb;
-  font-size: var(--compact-label-size);
+  font-size: var(--compact-button-size);
   font-weight: 800;
 }
 
 .report-summary strong,
 .export-panel strong {
   color: #ffffff;
-  font-size: var(--compact-heading-size);
+  font-size: var(--compact-label-size);
   word-break: break-word;
 }
 
@@ -1147,7 +1151,7 @@ svg {
 
 .report-panel .list-header h3 {
   margin: 0;
-  font-size: var(--compact-heading-size);
+  font-size: var(--compact-label-size);
 }
 
 .report-panel .report-summary {
@@ -1180,7 +1184,7 @@ svg {
 
 .report-sheet h3 {
   margin: 0 0 clamp(5px, 0.8vh, 10px);
-  font-size: var(--compact-heading-size);
+  font-size: var(--compact-label-size);
 }
 
 .report-markdown-preview {
@@ -1216,7 +1220,7 @@ svg {
 }
 
 .panel-status {
-  font-size: clamp(11px, 1.5vh, 12px);
+  font-size: var(--compact-button-size);
   opacity: 0.7;
 }
 
@@ -1231,7 +1235,7 @@ svg {
   flex-wrap: wrap;
   gap: 4px 8px;
   margin-bottom: clamp(4px, 0.6vh, 8px);
-  font-size: clamp(10.5px, 1.45vh, 12.5px);
+  font-size: var(--compact-label-size);
 }
 
 .analysis-counts span:last-child {
@@ -1266,7 +1270,7 @@ svg {
   padding: clamp(4px, 0.65vh, 6px) 8px;
   border-left: 3px solid #8fa4c8;
   background: rgba(120, 140, 170, 0.1);
-  font-size: clamp(10.5px, 1.45vh, 11.5px);
+  font-size: var(--compact-body-size);
   line-height: 1.28;
 }
 
@@ -1307,14 +1311,14 @@ svg {
 .analysis-kicker,
 .analysis-empty {
   margin: 0 0 clamp(4px, 0.7vh, 8px);
-  font-size: clamp(11px, 1.55vh, 12.5px);
+  font-size: var(--compact-body-size);
   line-height: 1.35;
   opacity: 0.82;
 }
 
 .fact-label {
   margin-bottom: 3px;
-  font-size: clamp(10.5px, 1.45vh, 12px);
+  font-size: var(--compact-body-size);
   opacity: 0.85;
 }
 
@@ -1330,7 +1334,7 @@ svg {
   border-radius: 6px;
   padding: 2px 7px;
   background: rgba(120, 140, 170, 0.18);
-  font-size: clamp(10px, 1.4vh, 11.5px);
+  font-size: var(--compact-body-size);
   line-height: 1.35;
 }
 
@@ -1341,7 +1345,7 @@ svg {
 
 .analysis-subtle {
   margin: clamp(5px, 0.8vh, 10px) 0 0;
-  font-size: clamp(10px, 1.4vh, 11.5px);
+  font-size: var(--compact-body-size);
   line-height: 1.35;
   opacity: 0.65;
 }
@@ -1355,7 +1359,7 @@ svg {
 }
 
 .room-controls span {
-  font-size: clamp(11px, 1.55vh, 12.5px);
+  font-size: var(--compact-label-size);
   font-weight: 700;
 }
 
@@ -1366,7 +1370,7 @@ svg {
   padding: 2px 6px;
   background: rgba(120, 140, 170, 0.15);
   color: inherit;
-  font-size: clamp(10.5px, 1.45vh, 11.5px);
+  font-size: var(--compact-body-size);
 }
 
 .room-judgment-card span {
@@ -1388,7 +1392,7 @@ svg {
   padding: clamp(6px, 0.9vh, 10px) 10px;
   background: rgba(90, 120, 180, 0.12);
   color: #9fb4d8;
-  font-size: clamp(10px, 1.4vh, 11.5px);
+  font-size: var(--compact-body-size);
   line-height: 1.35;
 }
 
