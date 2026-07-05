@@ -6,7 +6,7 @@ import type { LayerId } from "./types";
 const NO_VISIBLE_LAYERS = new Set<LayerId>();
 
 type ToolId = "pan" | "zoomIn" | "zoomOut" | "fit";
-type DialogType = "save" | "report" | "export" | "notifications" | null;
+type DialogType = "save" | "export" | "notifications" | null;
 type PanOffset = { x: number; y: number };
 type DragState = PanOffset & { pointerId: number; startX: number; startY: number };
 type DrawingInfo = {
@@ -60,6 +60,7 @@ export function App() {
   const [viewerDrawingInfo, setViewerDrawingInfo] = useState<DrawingInfo | null>(null);
   const effectiveDrawingInfo = getEffectiveDrawingInfo(analysis.drawingInfo ?? null, viewerDrawingInfo);
   const analysisError = analysis.drawingInfo?.error;
+  const shouldShowReport = Boolean(uploadedFile && (analysis.drawingInfo || effectiveDrawingInfo));
 
   // 업로드 파일 + 구조/용도를 FormData로 전송 → 백엔드가 사실 + 방별요구 + (깨끗규격이면) 실 pass/fail 반환
   const runAnalysis = useCallback((file?: File, structureVal?: string, occupancyVal?: string, mountVal?: string) => {
@@ -474,6 +475,13 @@ export function App() {
               방 면적은 flood-fill로 추출(신뢰 방만). 실 pass/fail 판정엔 <b>구조·층고</b>가 필요(감지면적 기준을 가름) — 미상이면 판정 보류(안전). 배치 확정은 감지기 인식 연결 후.
             </p>
           </section>
+          {shouldShowReport ? (
+            <ReportPanel
+              fileName={uploadedFile?.name ?? "선택된 도면 없음"}
+              drawingInfo={effectiveDrawingInfo}
+              analysisError={analysisError}
+            />
+          ) : null}
         </aside>
       </div>
 
@@ -521,7 +529,6 @@ function TopBar({
       </div>
       <nav className="top-actions">
         <button onClick={() => onTopAction("save")}>저장</button>
-        <button onClick={() => onTopAction("report")}>보고서</button>
         <button className="export" onClick={() => onTopAction("export")}>내보내기</button>
         <button className="round" aria-label="알림" onClick={() => onTopAction("notifications")}><Icon name="bell" /></button>
       </nav>
@@ -582,27 +589,14 @@ function getEffectiveDrawingInfo(backendInfo: DrawingInfo | null, viewerInfo: Dr
   return viewerInfo;
 }
 
-function ActionDialog({
-  dialog,
-  fileName,
-  drawingInfo,
-  analysisError,
-  onClose,
-}: {
-  dialog: DialogType;
-  fileName: string;
-  drawingInfo: DrawingInfo | null;
-  analysisError?: string;
-  onClose: () => void;
-}) {
+function getFactsMarkdown(fileName: string, drawingInfo: DrawingInfo | null, analysisError?: string) {
   const rooms = drawingInfo?.roomNames ?? [];
   const fireLayers = drawingInfo?.fireLayers ?? [];
   const layerNames = drawingInfo?.layerNames ?? [];
   const hasFacts = Boolean(drawingInfo && !drawingInfo.error);
   const sourceLabel = drawingInfo?.source === "viewer" ? "브라우저 CAD 렌더러" : "백엔드 FireVal 분석";
 
-  // 도면에서 자동 추출한 '사실'만 담은 마크다운(가짜 판정 없음).
-  const factsMarkdown = [
+  return [
     `# 소방 도면 사실 요약 — ${drawingInfo?.fileName ?? fileName}`,
     ``,
     hasFacts ? `- 기준: ${sourceLabel}` : ``,
@@ -625,23 +619,82 @@ function ActionDialog({
     `※ NFTC 적정성 판정(방별 필요 감지기 수)은 설비 심볼 인식·방 면적 자동추출 연결 후 제공됩니다.`,
     `   본 문서는 도면에서 자동 추출한 '사실'만 담습니다.`,
   ].join("\n");
+}
 
-  const downloadFacts = () => {
-    const blob = new Blob([factsMarkdown], { type: "text/markdown;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = "소방도면_사실요약.md";
-    anchor.click();
-    URL.revokeObjectURL(url);
-  };
+function downloadFactsMarkdown(factsMarkdown: string) {
+  const blob = new Blob([factsMarkdown], { type: "text/markdown;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = "소방도면_사실요약.md";
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
+function ReportPanel({
+  fileName,
+  drawingInfo,
+  analysisError,
+}: {
+  fileName: string;
+  drawingInfo: DrawingInfo | null;
+  analysisError?: string;
+}) {
+  const hasFacts = Boolean(drawingInfo && !drawingInfo.error);
+  const factsMarkdown = getFactsMarkdown(fileName, drawingInfo, analysisError);
+
+  return (
+    <section className="report-panel">
+      <div className="list-header">
+        <h3>보고서</h3>
+        <span className="report-status">분석 완료</span>
+      </div>
+      <div className="report-summary">
+        <article>
+          <span>도면</span>
+          <strong>{fileName}</strong>
+        </article>
+        <article>
+          <span>레이어</span>
+          <strong>{hasFacts ? `${drawingInfo?.layerCount ?? 0}개` : "-"}</strong>
+        </article>
+        <article>
+          <span>도형 요소</span>
+          <strong>{hasFacts ? `${(drawingInfo?.entityCount ?? 0).toLocaleString()}개` : "-"}</strong>
+        </article>
+      </div>
+      <div className="report-sheet">
+        <h3>소방 도면 사실 요약</h3>
+        <pre className="report-markdown-preview">
+          {factsMarkdown}
+        </pre>
+        <p className="report-note">※ 도면에서 자동 추출한 사실 · NFTC 적정성 판정은 인식 파이프라인 연결 후</p>
+      </div>
+      <button className="dialog-primary" onClick={() => downloadFactsMarkdown(factsMarkdown)}>사실 요약 다운로드 (.md)</button>
+    </section>
+  );
+}
+
+function ActionDialog({
+  dialog,
+  fileName,
+  drawingInfo,
+  analysisError,
+  onClose,
+}: {
+  dialog: DialogType;
+  fileName: string;
+  drawingInfo: DrawingInfo | null;
+  analysisError?: string;
+  onClose: () => void;
+}) {
+  const factsMarkdown = getFactsMarkdown(fileName, drawingInfo, analysisError);
 
   if (!dialog || dialog === "save") {
     return null;
   }
 
   const title = {
-    report: "도면 사실 요약",
     export: "내보내기",
     notifications: "알림 센터",
   }[dialog];
@@ -665,33 +718,6 @@ function ActionDialog({
           </button>
         </header>
 
-        {dialog === "report" ? (
-          <div className="dialog-content">
-            <div className="report-summary">
-              <article>
-                <span>도면</span>
-                <strong>{fileName}</strong>
-              </article>
-              <article>
-                <span>레이어</span>
-                <strong>{hasFacts ? `${drawingInfo?.layerCount ?? 0}개` : "-"}</strong>
-              </article>
-              <article>
-                <span>도형 요소</span>
-                <strong>{hasFacts ? `${(drawingInfo?.entityCount ?? 0).toLocaleString()}개` : "-"}</strong>
-              </article>
-            </div>
-            <div className="report-sheet">
-              <h3>소방 도면 사실 요약</h3>
-              <pre style={{ whiteSpace: "pre-wrap", fontSize: 12, lineHeight: 1.6, margin: 0, maxHeight: 300, overflow: "auto", fontFamily: "inherit" }}>
-                {factsMarkdown}
-              </pre>
-              <p style={{ fontSize: 11.5, opacity: 0.6, marginTop: 8 }}>※ 도면에서 자동 추출한 사실 · NFTC 적정성 판정은 인식 파이프라인 연결 후</p>
-            </div>
-            <button className="dialog-primary" onClick={downloadFacts}>사실 요약 다운로드 (.md)</button>
-          </div>
-        ) : null}
-
         {dialog === "export" ? (
           <div className="dialog-content">
             <div className="export-panel">
@@ -699,7 +725,7 @@ function ActionDialog({
               <strong>소방 도면 사실 요약 (.md)</strong>
               <p>도면에서 추출한 방·소방 설비 레이어 목록을 파일로 저장합니다. (도면 DWG/DXF 주석 내보내기, NFTC 판정서는 준비 중)</p>
             </div>
-            <button className="dialog-primary" onClick={downloadFacts}>사실 요약 다운로드 (.md)</button>
+            <button className="dialog-primary" onClick={() => downloadFactsMarkdown(factsMarkdown)}>사실 요약 다운로드 (.md)</button>
           </div>
         ) : null}
 

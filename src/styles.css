@@ -962,10 +962,15 @@ svg {
 }
 
 .report-summary article,
-.report-sheet,
 .export-panel,
 .notification-list article {
   border: 1px solid rgba(111, 137, 166, 0.16);
+  border-radius: 8px;
+  background: rgba(17, 29, 44, 0.88);
+}
+
+.report-panel {
+  border: 1px solid rgba(111, 137, 166, 0.28);
   border-radius: 8px;
   background: rgba(17, 29, 44, 0.88);
 }
@@ -996,8 +1001,59 @@ svg {
   padding: 16px;
 }
 
+.report-panel {
+  display: grid;
+  gap: 12px;
+  margin-top: 10px;
+  padding: 16px;
+}
+
+.report-panel .report-summary {
+  grid-template-columns: 1fr;
+}
+
+.report-panel .report-summary article {
+  min-height: auto;
+  padding: 0 0 12px;
+  border: 0;
+  border-bottom: 1px solid rgba(111, 137, 166, 0.14);
+  border-radius: 0;
+  background: transparent;
+}
+
+.report-panel .report-summary article:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.report-status {
+  font-size: 12px;
+  opacity: 0.7;
+}
+
+.report-panel .report-sheet {
+  padding: 14px 0 0;
+  border-top: 1px solid rgba(111, 137, 166, 0.16);
+}
+
 .report-sheet h3 {
   font-size: 16px;
+}
+
+.report-markdown-preview {
+  max-height: 260px;
+  margin: 0;
+  overflow: auto;
+  white-space: pre-wrap;
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.report-note {
+  margin-top: 8px;
+  font-size: 11.5px;
+  opacity: 0.6;
 }
 
 .report-sheet p,
@@ -1074,6 +1130,7 @@ svg {
 }
 
 .analysis-panel,
+.report-panel,
 .recommend-panel {
   background:
     radial-gradient(circle at 12% 0%, rgba(96, 142, 172, 0.12), transparent 18rem),
