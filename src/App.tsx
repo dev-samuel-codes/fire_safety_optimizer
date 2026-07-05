@@ -683,7 +683,14 @@ function ReportPanel({
     <section className="report-panel">
       <div className="list-header">
         <h3>보고서</h3>
-        <span className="report-status">분석 완료</span>
+        <button
+          className="report-icon-button"
+          aria-label="사실 요약 다운로드"
+          title="사실 요약 다운로드"
+          onClick={() => downloadFactsMarkdown(factsMarkdown)}
+        >
+          <Icon name="download" />
+        </button>
       </div>
       <div className="report-summary">
         <article>
@@ -706,7 +713,6 @@ function ReportPanel({
         </pre>
         <p className="report-note">※ 도면에서 자동 추출한 사실 · NFTC 적정성 판정은 인식 파이프라인 연결 후</p>
       </div>
-      <button className="dialog-primary report-download-button" onClick={() => downloadFactsMarkdown(factsMarkdown)}>사실 요약 다운로드 (.md)</button>
     </section>
   );
 }
@@ -834,6 +840,8 @@ function Icon({ name }: { name: string }) {
       return <svg viewBox="0 0 24 24" {...common}><path d="M6 6l12 12M18 6 6 18" /></svg>;
     case "arrow":
       return <svg viewBox="0 0 24 24" {...common}><path d="M5 12h14M13 6l6 6-6 6" /></svg>;
+    case "download":
+      return <svg viewBox="0 0 24 24" {...common}><path d="M12 3v12" /><path d="m7 10 5 5 5-5" /><path d="M5 21h14" /></svg>;
     case "shield":
       return <svg viewBox="0 0 24 24" {...common}><path d="M12 3 5 6v5c0 5 3 8 7 10 4-2 7-5 7-10V6Z" /><path d="m9 12 2 2 4-5" /></svg>;
     default:
