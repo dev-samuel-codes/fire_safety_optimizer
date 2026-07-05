@@ -164,8 +164,6 @@ svg {
 .top-actions button,
 .floor-select,
 .toolbar,
-.left-panel,
-.right-panel,
 .drawing-card,
 .panel-block,
 .analysis-panel,
@@ -265,14 +263,8 @@ svg {
   min-height: 0;
 }
 
-.left-panel,
-.right-panel {
-  overflow: hidden;
-  border-radius: 8px 8px 0 0;
-}
-
 .left-panel {
-  padding: clamp(7px, 1.1vh, 10px);
+  overflow: visible;
 }
 
 .left-panel .panel-block {
@@ -1463,7 +1455,8 @@ svg {
   grid-template-rows: minmax(0, 1fr) auto;
   gap: var(--app-gap);
   min-height: 0;
-  padding: 0 8px 8px 0;
+  overflow: visible;
+  padding: 0;
 }
 
 .analysis-panel,
