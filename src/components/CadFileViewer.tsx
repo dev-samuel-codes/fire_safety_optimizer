@@ -16,6 +16,15 @@ interface CadFileViewerProps {
   zoomLevel: number;
   panOffset: { x: number; y: number };
   onStatusChange: (message: string) => void;
+  onDrawingInfoChange?: (drawingInfo: {
+    fileName?: string;
+    layerCount?: number;
+    entityCount?: number;
+    layerNames?: string[];
+    fireLayers?: string[];
+    roomNames?: string[];
+    source?: "viewer";
+  } | null) => void;
 }
 
 type LoadState = "idle" | "loading" | "ready" | "error";
@@ -45,6 +54,7 @@ export function CadFileViewer({
   zoomLevel,
   panOffset,
   onStatusChange,
+  onDrawingInfoChange,
 }: CadFileViewerProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const viewerRef = useRef<CadViewer | null>(null);
@@ -129,6 +139,7 @@ export function CadFileViewer({
       setSummary(null);
       setCadDocument(null);
       setErrorMessage("");
+      onDrawingInfoChange?.(null);
       viewerRef.current?.clear();
       return;
     }
@@ -142,6 +153,7 @@ export function CadFileViewer({
     setSummary(null);
     setCadDocument(null);
     setErrorMessage("");
+    onDrawingInfoChange?.(null);
 
     const isActiveLoad = () => activeLoadIdRef.current === loadId && !controller.signal.aborted;
     const failRendering = (message: string) => {
@@ -187,6 +199,15 @@ export function CadFileViewer({
       setSummary(result.summary);
       setCadDocument(result.document);
       setLoadState("ready");
+      onDrawingInfoChange?.({
+        fileName: result.fileName ?? file.name,
+        layerCount: result.summary.layerCount,
+        entityCount: result.summary.entityCount,
+        layerNames: Object.keys(result.document.layers).sort((a, b) => a.localeCompare(b)).slice(0, 24),
+        fireLayers: [],
+        roomNames: [],
+        source: "viewer",
+      });
       requestAnimationFrame(() => {
         viewerRef.current?.resize();
         focusDocumentView(result.document);
@@ -213,7 +234,7 @@ export function CadFileViewer({
       acceptsViewerEventsRef.current = false;
       controller.abort();
     };
-  }, [file, focusDocumentView, onStatusChange]);
+  }, [file, focusDocumentView, onDrawingInfoChange, onStatusChange]);
 
   useEffect(() => {
     const viewer = viewerRef.current;

@@ -9,6 +9,16 @@ type ToolId = "pan" | "zoomIn" | "zoomOut" | "fit";
 type DialogType = "save" | "report" | "export" | "notifications" | null;
 type PanOffset = { x: number; y: number };
 type DragState = PanOffset & { pointerId: number; startX: number; startY: number };
+type DrawingInfo = {
+  fileName?: string;
+  layerCount?: number;
+  entityCount?: number;
+  fireLayers?: string[];
+  roomNames?: string[];
+  layerNames?: string[];
+  error?: string;
+  source?: "backend" | "viewer";
+};
 
 const zoomMin = 25;
 const zoomButtonStep = 25;
@@ -47,10 +57,7 @@ export function App() {
   const [occupancy, setOccupancy] = useState<string>("");   // "" 미상 | 용도 문자열
   const [mount, setMount] = useState<string>("");           // "" 미상 | "lt4"(<4m) | "ge4"(≥4m)
   const [analysis, setAnalysis] = useState<{
-    drawingInfo?: {
-      fileName?: string; layerCount?: number; entityCount?: number;
-      fireLayers?: string[]; roomNames?: string[]; error?: string;
-    } | null;
+    drawingInfo?: DrawingInfo | null;
     roomJudgments?: Array<{
       room?: string; status?: string; area_m2?: number;
       detail?: string; reason?: string; basis?: string;
@@ -59,6 +66,9 @@ export function App() {
       ruleId?: string; status?: string; severity?: string; description?: string;
     }>;
   }>({ drawingInfo: null, roomJudgments: [], violations: [] });
+  const [viewerDrawingInfo, setViewerDrawingInfo] = useState<DrawingInfo | null>(null);
+  const effectiveDrawingInfo = getEffectiveDrawingInfo(analysis.drawingInfo ?? null, viewerDrawingInfo);
+  const analysisError = analysis.drawingInfo?.error;
 
   // 업로드 파일 + 구조/용도를 FormData로 전송 → 백엔드가 사실 + 방별요구 + (깨끗규격이면) 실 pass/fail 반환
   const runAnalysis = useCallback((file?: File, structureVal?: string, occupancyVal?: string, mountVal?: string) => {
@@ -130,6 +140,7 @@ export function App() {
 
   const handleDrawingUpload = (file: File) => {
     setUploadedFile(file);
+    setViewerDrawingInfo(null);
     setZoomLevel((current) => Math.max(current, uploadedDrawingInitialZoom));
     setPanOffset({ x: 0, y: 0 });
     setToast(`${file.name} 분석 중… (도면 정보 추출)`);
@@ -341,6 +352,7 @@ export function App() {
                 zoomLevel={zoomLevel}
                 panOffset={panOffset}
                 onStatusChange={updateStatus}
+                onDrawingInfoChange={setViewerDrawingInfo}
               />
             ) : null}
           </div>
@@ -377,27 +389,37 @@ export function App() {
                 </div>
               </div>
             ) : null}
-            {analysis.drawingInfo && !analysis.drawingInfo.error ? (
+            {effectiveDrawingInfo && !effectiveDrawingInfo.error ? (
               <div style={{ marginBottom: 12 }}>
                 <p style={{ fontSize: 12.5, margin: "0 0 8px", lineHeight: 1.6 }}>
-                  업로드 도면에서 추출한 <b>실제 사실</b>
+                  업로드 도면에서 확인한 <b>실제 사실</b>
                 </p>
                 <div style={{ fontSize: 12, opacity: 0.85, margin: "0 0 5px" }}>
-                  방 {analysis.drawingInfo.roomNames?.length ?? 0}개
+                  방 {effectiveDrawingInfo.roomNames?.length ?? 0}개
                 </div>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginBottom: 10 }}>
-                  {(analysis.drawingInfo.roomNames ?? []).map((r) => (
+                  {(effectiveDrawingInfo.roomNames ?? []).map((r) => (
                     <span key={r} style={{ fontSize: 11.5, padding: "3px 8px", borderRadius: 6, background: "rgba(120,140,170,0.18)" }}>{r}</span>
                   ))}
                 </div>
                 <div style={{ fontSize: 12, opacity: 0.85, margin: "0 0 5px" }}>
-                  소방 설비 레이어 {analysis.drawingInfo.fireLayers?.length ?? 0}개
+                  소방 설비 레이어 {effectiveDrawingInfo.fireLayers?.length ?? 0}개
                 </div>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
-                  {(analysis.drawingInfo.fireLayers ?? []).slice(0, 8).map((l) => (
+                  {(effectiveDrawingInfo.fireLayers ?? []).slice(0, 8).map((l) => (
                     <span key={l} style={{ fontSize: 11, padding: "3px 8px", borderRadius: 6, background: "rgba(210,80,80,0.16)", color: "#e79b9b" }}>{l}</span>
                   ))}
                 </div>
+                {effectiveDrawingInfo.source === "viewer" ? (
+                  <p style={{ fontSize: 11.5, opacity: 0.65, lineHeight: 1.5, margin: "10px 0 0" }}>
+                    브라우저 렌더러 기준: 레이어 <b>{effectiveDrawingInfo.layerCount ?? 0}</b>개 · 요소 <b>{effectiveDrawingInfo.entityCount?.toLocaleString() ?? 0}</b>개
+                  </p>
+                ) : null}
+                {analysisError ? (
+                  <p style={{ fontSize: 11.5, opacity: 0.65, lineHeight: 1.5, margin: "8px 0 0" }}>
+                    정밀 분석 보류: {analysisError}
+                  </p>
+                ) : null}
               </div>
             ) : (
               <p style={{ fontSize: 12.5, margin: "0 0 12px", lineHeight: 1.6, opacity: 0.7 }}>
@@ -468,15 +490,16 @@ export function App() {
       <footer className="status-bar">
         <span className="status-dot" />
         <strong>상태: {toast}</strong>
-        {analysis.drawingInfo && !analysis.drawingInfo.error ? (
-          <span>추출: 방 <b>{analysis.drawingInfo.roomNames?.length ?? 0}</b>개 · 소방레이어 <b>{analysis.drawingInfo.fireLayers?.length ?? 0}</b></span>
+        {effectiveDrawingInfo && !effectiveDrawingInfo.error ? (
+          <span>확인: 방 <b>{effectiveDrawingInfo.roomNames?.length ?? 0}</b>개 · 소방레이어 <b>{effectiveDrawingInfo.fireLayers?.length ?? 0}</b></span>
         ) : null}
         <em><Icon name="shield" /> 한국 화재안전기술기준 (NFTC) · FireVal 엔진</em>
       </footer>
       <ActionDialog
         dialog={dialog}
         fileName={uploadedFile?.name ?? "선택된 도면 없음"}
-        drawingInfo={analysis.drawingInfo ?? null}
+        drawingInfo={effectiveDrawingInfo}
+        analysisError={analysisError}
         onClose={() => setDialog(null)}
       />
     </main>
@@ -561,36 +584,52 @@ function isInteractiveDrawingTarget(target: EventTarget) {
     && Boolean(target.closest("button, input, select, textarea, label"));
 }
 
+function getEffectiveDrawingInfo(backendInfo: DrawingInfo | null, viewerInfo: DrawingInfo | null) {
+  if (backendInfo && !backendInfo.error) {
+    return { ...backendInfo, source: backendInfo.source ?? "backend" };
+  }
+
+  return viewerInfo;
+}
+
 function ActionDialog({
   dialog,
   fileName,
   drawingInfo,
+  analysisError,
   onClose,
 }: {
   dialog: DialogType;
   fileName: string;
-  drawingInfo: {
-    fileName?: string; layerCount?: number; entityCount?: number;
-    fireLayers?: string[]; roomNames?: string[]; error?: string;
-  } | null;
+  drawingInfo: DrawingInfo | null;
+  analysisError?: string;
   onClose: () => void;
 }) {
   const rooms = drawingInfo?.roomNames ?? [];
   const fireLayers = drawingInfo?.fireLayers ?? [];
+  const layerNames = drawingInfo?.layerNames ?? [];
   const hasFacts = Boolean(drawingInfo && !drawingInfo.error);
+  const sourceLabel = drawingInfo?.source === "viewer" ? "브라우저 CAD 렌더러" : "백엔드 FireVal 분석";
 
   // 도면에서 자동 추출한 '사실'만 담은 마크다운(가짜 판정 없음).
   const factsMarkdown = [
     `# 소방 도면 사실 요약 — ${drawingInfo?.fileName ?? fileName}`,
     ``,
+    hasFacts ? `- 기준: ${sourceLabel}` : ``,
     hasFacts ? `- 레이어: ${drawingInfo?.layerCount ?? "-"}개` : `- (업로드된 도면 없음 또는 파싱 실패)`,
     ...(hasFacts ? [`- 도형 요소: ${(drawingInfo?.entityCount ?? 0).toLocaleString()}개`] : []),
+    ...(analysisError ? [`- 정밀 분석 상태: ${analysisError}`] : []),
     ``,
     `## 추출된 방 (${rooms.length})`,
-    ...rooms.map((r) => `- ${r}`),
+    ...(rooms.length > 0 ? rooms.map((r) => `- ${r}`) : [`- 정밀 분석 연결 후 표시`]),
     ``,
     `## 소방 설비 레이어 (${fireLayers.length})`,
-    ...fireLayers.map((l) => `- ${l}`),
+    ...(fireLayers.length > 0 ? fireLayers.map((l) => `- ${l}`) : [`- 정밀 분석 연결 후 표시`]),
+    ...(layerNames.length > 0 ? [
+      ``,
+      `## 렌더러 확인 레이어 샘플 (${layerNames.length})`,
+      ...layerNames.map((l) => `- ${l}`),
+    ] : []),
     ``,
     `---`,
     `※ NFTC 적정성 판정(방별 필요 감지기 수)은 설비 심볼 인식·방 면적 자동추출 연결 후 제공됩니다.`,
@@ -644,12 +683,12 @@ function ActionDialog({
                 <strong>{fileName}</strong>
               </article>
               <article>
-                <span>추출된 방</span>
-                <strong>{rooms.length}개</strong>
+                <span>레이어</span>
+                <strong>{hasFacts ? `${drawingInfo?.layerCount ?? 0}개` : "-"}</strong>
               </article>
               <article>
-                <span>소방 레이어</span>
-                <strong>{fireLayers.length}개</strong>
+                <span>도형 요소</span>
+                <strong>{hasFacts ? `${(drawingInfo?.entityCount ?? 0).toLocaleString()}개` : "-"}</strong>
               </article>
             </div>
             <div className="report-sheet">
