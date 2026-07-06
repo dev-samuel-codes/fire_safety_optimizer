@@ -577,7 +577,7 @@ export function App() {
                   </div>
                 ) : null}
                 {recognition.legendTypes.length > 0 ? (
-                  <div style={{ fontSize: 11, opacity: 0.7, marginBottom: 6 }}>범례 감지: {recognition.legendTypes.slice(0, 5).join(", ")}</div>
+                  <div style={{ fontSize: 11, opacity: 0.72, marginBottom: 6 }}>범례 종류(힌트): {recognition.legendTypes.slice(0, 6).join(", ")}</div>
                 ) : null}
                 <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 300, overflowY: "auto" }}>
                   {recognition.classes.map((c) => (

@@ -425,9 +425,16 @@ def result_manifest(doc, result: RecognitionResult) -> dict:
             "thumbnail": _class_thumbnail(doc, c),
         })
     classes.sort(key=lambda x: (not x["needsHitl"], -x["count"]))
+    # 범례 종류 → distinct 설비 라벨(중복 텍스트 대신). HITL 힌트용(자동채움 아님).
+    _leg_lbl = {"detector_smoke": "연기감지기", "detector_heat": "열감지기"}
+    legend_facs = []
+    for _, fac in result.legend_types:
+        lbl = _leg_lbl.get(fac, fac)
+        if lbl not in legend_facs:
+            legend_facs.append(lbl)
     return {"classes": classes,
-            "legendTypes": [t for t, _ in result.legend_types],
-            "detectorContext": result.detector_ctx,   # False면 감지기 도면 아님(판정 해당 없음)
+            "legendTypes": legend_facs,                # 범례서 읽은 distinct 설비(힌트)
+            "detectorContext": result.detector_ctx,    # False면 감지기 도면 아님(판정 해당 없음)
             "scopeHint": result.scope_hint,            # 언급된 설비(스프링클러 등)
             "facilityOptions": list(FACILITIES) + [IGNORE]}
 
