@@ -260,6 +260,7 @@ svg {
     var(--resize-handle-width)
     var(--right-panel-width);
   gap: 0;
+  height: 100%;
   min-height: 0;
   overflow: hidden;
   padding: 0 12px;
@@ -274,10 +275,14 @@ svg {
 .left-panel,
 .right-panel,
 .canvas-panel {
+  height: 100%;
   min-height: 0;
 }
 
 .left-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--app-gap);
   overflow: hidden;
 }
 
@@ -310,11 +315,56 @@ svg {
 }
 
 .left-panel .panel-block {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
   border-radius: 10px;
   padding: clamp(9px, 1.25vh, 12px);
 }
 
+.left-panel .panel-block:first-of-type {
+  flex: 0 0 54%;
+}
+
+.left-panel .panel-block:only-child {
+  flex: 1 1 0;
+  max-height: none;
+}
+
+.left-panel .panel-block.compact {
+  flex: 1 1 0;
+}
+
+.left-panel .panel-block + .panel-block {
+  margin-top: 0;
+}
+
+.left-panel .panel-scroll {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow: auto;
+  padding-right: 2px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(124, 147, 172, 0.62) rgba(15, 26, 40, 0.35);
+}
+
+.left-panel .panel-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.left-panel .panel-scroll::-webkit-scrollbar-track {
+  border-radius: 999px;
+  background: rgba(15, 26, 40, 0.35);
+}
+
+.left-panel .panel-scroll::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(124, 147, 172, 0.62);
+}
+
 .left-panel .panel-heading {
+  flex: 0 0 auto;
   gap: 7px;
   margin-bottom: clamp(6px, 0.8vh, 10px);
   padding-bottom: clamp(5px, 0.7vh, 8px);

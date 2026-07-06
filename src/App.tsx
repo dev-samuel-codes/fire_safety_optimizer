@@ -364,45 +364,47 @@ export function App() {
             <div className="panel-heading">
               <h2>도면 관리</h2>
             </div>
-            <div className="section-label-row">
-              <span>도면 파일</span>
-              <label className="primary-small upload-control">
-                파일 추가
-                <input
-                  type="file"
-                  accept=".dwg,.dxf"
-                  onChange={(event) => {
-                    const file = event.target.files?.[0];
-                    if (file) {
-                      handleDrawingUpload(file);
-                    }
-                  }}
-                />
-              </label>
-            </div>
-            <div className="file-list">
-              {uploadedFile ? (
-                <button
-                  className="file-item active"
-                  onClick={() => setToast(`${uploadedFile.name} 도면을 선택했습니다.`)}
-                >
-                  <span>
-                    <strong>{uploadedFile.name}</strong>
-                    <small>{formatFileSize(uploadedFile.size)} · 업로드됨</small>
-                  </span>
-                  <em>표시됨</em>
-                </button>
-              ) : null}
-            </div>
-            <div className="upload-guide">
-              <strong>권장 도면 조건</strong>
-              <ul>
-                <li><b>건축 평면도</b>(벽 위주) — 가구·집기·설비 배관이 <b>없을수록</b> 방·면적 자동추출이 정확합니다</li>
-                <li>방 이름이 <b>문자(텍스트)</b>로 표기</li>
-                <li>소방 설비(감지기·스프링클러)가 <b>레이어로 구분</b></li>
-                <li><b>1개 층</b> 평면 · DWG 또는 DXF</li>
-              </ul>
-              <p>※ 가구가 섞이면 작은 방이 잘게 쪼개져 면적 추출이 부정확해집니다.</p>
+            <div className="panel-scroll">
+              <div className="section-label-row">
+                <span>도면 파일</span>
+                <label className="primary-small upload-control">
+                  파일 추가
+                  <input
+                    type="file"
+                    accept=".dwg,.dxf"
+                    onChange={(event) => {
+                      const file = event.target.files?.[0];
+                      if (file) {
+                        handleDrawingUpload(file);
+                      }
+                    }}
+                  />
+                </label>
+              </div>
+              <div className="file-list">
+                {uploadedFile ? (
+                  <button
+                    className="file-item active"
+                    onClick={() => setToast(`${uploadedFile.name} 도면을 선택했습니다.`)}
+                  >
+                    <span>
+                      <strong>{uploadedFile.name}</strong>
+                      <small>{formatFileSize(uploadedFile.size)} · 업로드됨</small>
+                    </span>
+                    <em>표시됨</em>
+                  </button>
+                ) : null}
+              </div>
+              <div className="upload-guide">
+                <strong>권장 도면 조건</strong>
+                <ul>
+                  <li><b>건축 평면도</b>(벽 위주) — 가구·집기·설비 배관이 <b>없을수록</b> 방·면적 자동추출이 정확합니다</li>
+                  <li>방 이름이 <b>문자(텍스트)</b>로 표기</li>
+                  <li>소방 설비(감지기·스프링클러)가 <b>레이어로 구분</b></li>
+                  <li><b>1개 층</b> 평면 · DWG 또는 DXF</li>
+                </ul>
+                <p>※ 가구가 섞이면 작은 방이 잘게 쪼개져 면적 추출이 부정확해집니다.</p>
+              </div>
             </div>
           </section>
 
@@ -412,15 +414,17 @@ export function App() {
                 <h3>도면 정보</h3>
                 <Icon name="layers" />
               </div>
-              {analysis.drawingInfo.error ? (
-                <p style={{ fontSize: 12.5, opacity: 0.7, padding: "4px" }}>{analysis.drawingInfo.error}</p>
-              ) : (
-                <div style={{ fontSize: 12.5, lineHeight: 1.7, padding: "2px 4px" }}>
-                  <div>레이어 <b>{analysis.drawingInfo.layerCount}</b> · 요소 <b>{analysis.drawingInfo.entityCount?.toLocaleString()}</b></div>
-                  <div style={{ marginTop: 6, opacity: 0.85 }}>소방 레이어: {(analysis.drawingInfo.fireLayers ?? []).slice(0, 6).join(", ") || "—"}</div>
-                  <div style={{ marginTop: 6, opacity: 0.85 }}>실명: {(analysis.drawingInfo.roomNames ?? []).slice(0, 8).join(", ") || "—"}</div>
-                </div>
-              )}
+              <div className="panel-scroll">
+                {analysis.drawingInfo.error ? (
+                  <p style={{ fontSize: 12.5, opacity: 0.7, padding: "4px" }}>{analysis.drawingInfo.error}</p>
+                ) : (
+                  <div style={{ fontSize: 12.5, lineHeight: 1.7, padding: "2px 4px" }}>
+                    <div>레이어 <b>{analysis.drawingInfo.layerCount}</b> · 요소 <b>{analysis.drawingInfo.entityCount?.toLocaleString()}</b></div>
+                    <div style={{ marginTop: 6, opacity: 0.85 }}>소방 레이어: {(analysis.drawingInfo.fireLayers ?? []).slice(0, 6).join(", ") || "—"}</div>
+                    <div style={{ marginTop: 6, opacity: 0.85 }}>실명: {(analysis.drawingInfo.roomNames ?? []).slice(0, 8).join(", ") || "—"}</div>
+                  </div>
+                )}
+              </div>
             </section>
           ) : null}
         </aside>
