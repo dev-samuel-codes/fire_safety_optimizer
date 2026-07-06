@@ -356,17 +356,13 @@ export function App() {
         onTopAction={handleTopAction}
         shareMenuOpen={dialog === "export"}
         onShareMenuClose={() => setDialog(null)}
-        onDownloadFacts={() => {
-          downloadFactsMarkdown(getFactsMarkdown(
+        onEmailFacts={() => {
+          openFactsEmail(getFactsMarkdown(
             uploadedFile?.name ?? "선택된 도면 없음",
             visibleDrawingInfo,
             analysisError,
             analysisRecovered,
           ));
-          setDialog(null);
-        }}
-        onMenuStatus={(message) => {
-          setToast(message);
           setDialog(null);
         }}
       />
@@ -716,15 +712,13 @@ function TopBar({
   onTopAction,
   shareMenuOpen,
   onShareMenuClose,
-  onDownloadFacts,
-  onMenuStatus,
+  onEmailFacts,
 }: {
   selectedFileName?: string;
   onTopAction: (action: Exclude<DialogType, null>) => void;
   shareMenuOpen: boolean;
   onShareMenuClose: () => void;
-  onDownloadFacts: () => void;
-  onMenuStatus: (message: string) => void;
+  onEmailFacts: () => void;
 }) {
   const topActionsRef = useRef<HTMLElement | null>(null);
 
@@ -783,8 +777,7 @@ function TopBar({
         </button>
         {shareMenuOpen ? (
           <ShareMenu
-            onDownloadFacts={onDownloadFacts}
-            onMenuStatus={onMenuStatus}
+            onEmailFacts={onEmailFacts}
           />
         ) : null}
       </nav>
@@ -793,35 +786,14 @@ function TopBar({
 }
 
 function ShareMenu({
-  onDownloadFacts,
-  onMenuStatus,
+  onEmailFacts,
 }: {
-  onDownloadFacts: () => void;
-  onMenuStatus: (message: string) => void;
+  onEmailFacts: () => void;
 }) {
-  const notify = (message: string) => {
-    onMenuStatus(message);
-  };
-
   return (
     <div className="share-menu" role="menu" aria-label="공유 메뉴">
-      <button type="button" role="menuitem" onClick={onDownloadFacts}>
-        <span>사실 요약 파일 보기</span>
-      </button>
-      <button type="button" role="menuitem" onClick={() => notify("보고서 고정 기능은 준비 중입니다.")}>
-        <span>보고서 고정</span>
-      </button>
-      <button type="button" role="menuitem" onClick={() => notify("프로젝트 이동 기능은 준비 중입니다.")}>
-        <span>프로젝트로 이동</span>
-      </button>
-      <button type="button" role="menuitem" onClick={() => notify("현재 도면 제거 기능은 준비 중입니다.")}>
-        <span>현재 도면에서 제거</span>
-      </button>
-      <button type="button" role="menuitem" onClick={() => notify("아카이브 보관 기능은 준비 중입니다.")}>
-        <span>아카이브에 보관</span>
-      </button>
-      <button type="button" role="menuitem" className="danger" onClick={() => notify("삭제 기능은 준비 중입니다.")}>
-        <span>삭제</span>
+      <button type="button" role="menuitem" onClick={onEmailFacts}>
+        <span>이메일로 보내기</span>
       </button>
     </div>
   );
@@ -988,6 +960,13 @@ function downloadFactsMarkdown(factsMarkdown: string) {
   anchor.download = "소방도면_사실요약.md";
   anchor.click();
   URL.revokeObjectURL(url);
+}
+
+function openFactsEmail(factsMarkdown: string) {
+  downloadFactsMarkdown(factsMarkdown);
+  const subject = encodeURIComponent("소방 도면 사실 요약");
+  const body = encodeURIComponent(factsMarkdown);
+  window.open(`https://mail.google.com/mail/?view=cm&fs=1&su=${subject}&body=${body}`, "_blank", "noopener,noreferrer");
 }
 
 function ReportPanel({
