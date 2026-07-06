@@ -168,12 +168,8 @@ export function App() {
     zoomLevelRef.current = zoomLevel;
   }, [zoomLevel]);
 
-  const openDialog = (nextDialog: Exclude<DialogType, null>) => {
-    setDialog(nextDialog);
-  };
-
   const handleTopAction = (action: Exclude<DialogType, null>) => {
-    openDialog(action);
+    setDialog((current) => current === action ? null : action);
   };
 
   const handleDrawingUpload = (file: File) => {
@@ -358,6 +354,21 @@ export function App() {
       <TopBar
         selectedFileName={uploadedFile?.name}
         onTopAction={handleTopAction}
+        shareMenuOpen={dialog === "export"}
+        onShareMenuClose={() => setDialog(null)}
+        onDownloadFacts={() => {
+          downloadFactsMarkdown(getFactsMarkdown(
+            uploadedFile?.name ?? "선택된 도면 없음",
+            visibleDrawingInfo,
+            analysisError,
+            analysisRecovered,
+          ));
+          setDialog(null);
+        }}
+        onMenuStatus={(message) => {
+          setToast(message);
+          setDialog(null);
+        }}
       />
       <div
         ref={workspaceRef}
@@ -667,14 +678,6 @@ export function App() {
         ) : null}
         <em><Icon name="shield" /> 한국 화재안전기술기준 (NFTC) · FireVal 엔진</em>
       </footer>
-      <ActionDialog
-        dialog={dialog}
-        fileName={uploadedFile?.name ?? "선택된 도면 없음"}
-        drawingInfo={visibleDrawingInfo}
-        analysisError={analysisError}
-        analysisRecovered={analysisRecovered}
-        onClose={() => setDialog(null)}
-      />
       </main>
     </div>
   );
@@ -711,10 +714,46 @@ function useViewportFrame() {
 function TopBar({
   selectedFileName,
   onTopAction,
+  shareMenuOpen,
+  onShareMenuClose,
+  onDownloadFacts,
+  onMenuStatus,
 }: {
   selectedFileName?: string;
   onTopAction: (action: Exclude<DialogType, null>) => void;
+  shareMenuOpen: boolean;
+  onShareMenuClose: () => void;
+  onDownloadFacts: () => void;
+  onMenuStatus: (message: string) => void;
 }) {
+  const topActionsRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    if (!shareMenuOpen) {
+      return;
+    }
+
+    const handlePointerDown = (event: globalThis.PointerEvent) => {
+      const target = event.target;
+      if (target instanceof Node && topActionsRef.current?.contains(target)) {
+        return;
+      }
+      onShareMenuClose();
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        onShareMenuClose();
+      }
+    };
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [onShareMenuClose, shareMenuOpen]);
+
   return (
     <header className="topbar">
       <div className="brand">
@@ -731,17 +770,60 @@ function TopBar({
         <Icon name="document" />
         <span>{selectedFileName ?? "도면 파일을 선택해주세요"}</span>
       </div>
-      <nav className="top-actions">
+      <nav className="top-actions" ref={topActionsRef}>
         <button
           className="round"
           onClick={() => onTopAction("export")}
+          aria-expanded={shareMenuOpen}
+          aria-haspopup="menu"
           aria-label="공유"
           title="공유"
         >
           <Icon name="share" />
         </button>
+        {shareMenuOpen ? (
+          <ShareMenu
+            onDownloadFacts={onDownloadFacts}
+            onMenuStatus={onMenuStatus}
+          />
+        ) : null}
       </nav>
     </header>
+  );
+}
+
+function ShareMenu({
+  onDownloadFacts,
+  onMenuStatus,
+}: {
+  onDownloadFacts: () => void;
+  onMenuStatus: (message: string) => void;
+}) {
+  const notify = (message: string) => {
+    onMenuStatus(message);
+  };
+
+  return (
+    <div className="share-menu" role="menu" aria-label="공유 메뉴">
+      <button type="button" role="menuitem" onClick={onDownloadFacts}>
+        <span>사실 요약 파일 보기</span>
+      </button>
+      <button type="button" role="menuitem" onClick={() => notify("보고서 고정 기능은 준비 중입니다.")}>
+        <span>보고서 고정</span>
+      </button>
+      <button type="button" role="menuitem" onClick={() => notify("프로젝트 이동 기능은 준비 중입니다.")}>
+        <span>프로젝트로 이동</span>
+      </button>
+      <button type="button" role="menuitem" onClick={() => notify("현재 도면 제거 기능은 준비 중입니다.")}>
+        <span>현재 도면에서 제거</span>
+      </button>
+      <button type="button" role="menuitem" onClick={() => notify("아카이브 보관 기능은 준비 중입니다.")}>
+        <span>아카이브에 보관</span>
+      </button>
+      <button type="button" role="menuitem" className="danger" onClick={() => notify("삭제 기능은 준비 중입니다.")}>
+        <span>삭제</span>
+      </button>
+    </div>
   );
 }
 
@@ -961,66 +1043,6 @@ function ReportPanel({
         <p className="report-note">※ 도면에서 자동 추출한 사실 · NFTC 적정성 판정은 인식 파이프라인 연결 후</p>
       </div>
     </section>
-  );
-}
-
-function ActionDialog({
-  dialog,
-  fileName,
-  drawingInfo,
-  analysisError,
-  analysisRecovered,
-  onClose,
-}: {
-  dialog: DialogType;
-  fileName: string;
-  drawingInfo: DrawingInfo | null;
-  analysisError?: string;
-  analysisRecovered?: boolean;
-  onClose: () => void;
-}) {
-  const factsMarkdown = getFactsMarkdown(fileName, drawingInfo, analysisError, analysisRecovered);
-
-  if (!dialog) {
-    return null;
-  }
-
-  const title = {
-    export: "공유",
-  }[dialog];
-
-  return (
-    <div className="action-dialog-backdrop" role="presentation" onMouseDown={onClose}>
-      <section
-        className="action-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-label={title}
-        onMouseDown={(event) => event.stopPropagation()}
-      >
-        <header>
-          <div>
-            <span>FireOpt</span>
-            <h2>{title}</h2>
-          </div>
-          <button aria-label="닫기" onClick={onClose}>
-            <Icon name="close" />
-          </button>
-        </header>
-
-        {dialog === "export" ? (
-          <div className="dialog-content">
-            <div className="export-panel">
-              <span>내보내기 가능</span>
-              <strong>소방 도면 사실 요약 (.md)</strong>
-              <p>도면에서 추출한 방·소방 설비 레이어 목록을 파일로 저장합니다. (도면 DWG/DXF 주석 내보내기, NFTC 판정서는 준비 중)</p>
-            </div>
-            <button className="dialog-primary" onClick={() => downloadFactsMarkdown(factsMarkdown)}>사실 요약 다운로드 (.md)</button>
-          </div>
-        ) : null}
-
-      </section>
-    </div>
   );
 }
 

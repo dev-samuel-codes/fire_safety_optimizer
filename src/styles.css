@@ -110,6 +110,8 @@ svg {
 }
 
 .topbar {
+  position: relative;
+  z-index: 45;
   display: grid;
   grid-template-columns: 180px 260px 1fr auto;
   align-items: center;
@@ -209,9 +211,11 @@ svg {
 }
 
 .top-actions {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 7px;
+  z-index: 35;
 }
 
 .top-actions button {
@@ -248,6 +252,64 @@ svg {
 .top-actions .round svg {
   width: 16px;
   height: 16px;
+}
+
+.share-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 40;
+  display: grid;
+  width: 164px;
+  padding: 5px 0;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 10px;
+  background: #333;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.36);
+  outline: none;
+}
+
+.share-menu button {
+  display: block;
+  align-items: center;
+  min-width: 0;
+  height: 27px;
+  border: 0;
+  border-radius: 0;
+  padding: 0 11px;
+  background: transparent;
+  color: #f5f5f5;
+  font-size: 11px;
+  font-weight: 700;
+  text-align: left;
+  outline: none;
+  box-shadow: none;
+}
+
+.share-menu button:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.share-menu:focus,
+.share-menu:focus-visible,
+.share-menu button:focus,
+.share-menu button:focus-visible,
+.share-menu span:focus,
+.share-menu span:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
+.share-menu button span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  outline: none;
+}
+
+.share-menu button.danger {
+  color: #ff4d4f;
 }
 
 .workspace {
@@ -1085,68 +1147,6 @@ svg {
   color: #dcf7ff;
 }
 
-.action-dialog-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 20;
-  display: grid;
-  place-items: center;
-  padding: 24px;
-  background: rgba(2, 6, 12, 0.58);
-  backdrop-filter: blur(5px);
-}
-
-.action-dialog {
-  width: min(620px, 100%);
-  overflow: hidden;
-  border: 1px solid rgba(111, 137, 166, 0.34);
-  border-radius: 8px;
-  background: #0d1724;
-  box-shadow: 0 28px 90px rgba(0, 0, 0, 0.48);
-}
-
-.action-dialog header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  min-height: 72px;
-  padding: 16px 18px;
-  border-bottom: 1px solid rgba(111, 137, 166, 0.18);
-  background: linear-gradient(180deg, rgba(28, 42, 59, 0.98), rgba(14, 23, 35, 0.98));
-}
-
-.action-dialog header span {
-  color: #72d8ff;
-  font-size: 12px;
-  font-weight: 900;
-}
-
-.action-dialog h2,
-.action-dialog h3 {
-  margin: 0;
-}
-
-.action-dialog h2 {
-  margin-top: 3px;
-  font-size: 19px;
-}
-
-.action-dialog header button {
-  display: grid;
-  width: 38px;
-  height: 38px;
-  place-items: center;
-  border: 1px solid rgba(119, 144, 170, 0.24);
-  border-radius: 6px;
-  background: rgba(7, 13, 21, 0.62);
-}
-
-.dialog-content {
-  display: grid;
-  gap: 14px;
-  padding: 18px;
-}
-
 .report-summary {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -1154,7 +1154,6 @@ svg {
 }
 
 .report-summary article,
-.export-panel,
 .notification-list article {
   border: 1px solid rgba(111, 137, 166, 0.16);
   border-radius: 8px;
@@ -1174,22 +1173,19 @@ svg {
   padding: clamp(7px, 1vh, 12px);
 }
 
-.report-summary span,
-.export-panel span {
+.report-summary span {
   color: #91a5bb;
   font-size: var(--compact-button-size);
   font-weight: 800;
 }
 
-.report-summary strong,
-.export-panel strong {
+.report-summary strong {
   color: #ffffff;
   font-size: var(--compact-label-size);
   word-break: break-word;
 }
 
-.report-sheet,
-.export-panel {
+.report-sheet {
   padding: 16px;
 }
 
@@ -1481,7 +1477,6 @@ svg {
 
 .report-sheet p,
 .report-sheet li,
-.export-panel p,
 .notification-list p {
   color: #b8c6d5;
   font-size: var(--compact-body-size);
@@ -1490,49 +1485,6 @@ svg {
 .report-sheet ul {
   margin: 10px 0 0;
   padding-left: 18px;
-}
-
-.export-options {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 10px;
-}
-
-.export-options button {
-  display: grid;
-  gap: 6px;
-  min-height: 86px;
-  border: 1px solid rgba(111, 137, 166, 0.24);
-  border-radius: 8px;
-  background: rgba(15, 26, 40, 0.92);
-  color: #d9e6f4;
-  text-align: left;
-  padding: 14px;
-}
-
-.export-options button.selected {
-  border-color: rgba(47, 160, 255, 0.68);
-  background: linear-gradient(180deg, rgba(18, 83, 143, 0.74), rgba(13, 34, 57, 0.96));
-}
-
-.export-options strong {
-  font-size: 18px;
-}
-
-.export-options span {
-  color: #a7b7c8;
-  font-size: 12px;
-}
-
-.dialog-primary {
-  justify-self: end;
-  height: clamp(32px, 4.5vh, 38px);
-  border: 0;
-  border-radius: 6px;
-  padding: 0 16px;
-  background: linear-gradient(180deg, #0d6bff, #0752c8);
-  color: white;
-  font-weight: 900;
 }
 
 .notification-list {
