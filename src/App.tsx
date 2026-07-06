@@ -84,9 +84,9 @@ export function App() {
   // 소방 심볼 인식(HITL 명명): 업로드 시 /api/recognize 매니페스트, labels=사용자 지정 종류
   const [recognition, setRecognition] = useState<Recognition>(null);
   const [labels, setLabels] = useState<Record<string, string>>({});
-  // AI 방찾기(SAM): 방 레이어 없는 실무 도면용. rooms=[{name,area_m2,confidence}], loading 상태
+  // AI 방찾기(기하): 방 레이어 없는 실무 도면용. rooms=[{name,area_m2,center,status}], loading 상태
   const [aiResult, setAiResult] = useState<{
-    rooms?: Array<{ name?: string; area_m2?: number; confidence?: number }>;
+    rooms?: Array<{ name?: string; area_m2?: number; center?: number[]; status?: string; bridged?: boolean }>;
     violations?: Array<{ ruleId?: string; status?: string; description?: string; roomName?: string; center?: number[] }>;
     note?: string; available?: boolean; loading?: boolean;
   } | null>(null);
@@ -165,7 +165,8 @@ export function App() {
           setRecognition(null);
           return;
         }
-        setRecognition({ classes: d.classes, legendTypes: d.legendTypes ?? [], facilityOptions: d.facilityOptions ?? [] });
+        setRecognition({ classes: d.classes, legendTypes: d.legendTypes ?? [], facilityOptions: d.facilityOptions ?? [],
+          detectorContext: d.detectorContext, scopeHint: d.scopeHint });
         const init: Record<string, string> = {};
         for (const c of d.classes as SymbolClass[]) {
           if (c.guess) init[c.classId] = c.guess;    // 레이어/블록명 자동추정 프리필
@@ -683,8 +684,10 @@ export function App() {
               (() => {
                 const viols = aiResult.violations ?? [];
                 const rooms = aiResult.rooms ?? [];
-                const roomArea: Record<string, number | undefined> = {};
-                rooms.forEach((r) => { if (r.name && !(r.name in roomArea)) roomArea[r.name] = r.area_m2; });
+                // 면적은 이름이 아니라 center(고유 위치)로 매칭 — 동명 방 오염 방지(6축 [10]).
+                const areaByCenter: Record<string, number | undefined> = {};
+                rooms.forEach((r) => { if (Array.isArray(r.center)) areaByCenter[String(r.center)] = r.area_m2; });
+                const areaOf = (v: { center?: number[] }) => (Array.isArray(v.center) ? areaByCenter[String(v.center)] : undefined);
                 const keyOf = (v: { roomName?: string }, i: number) => `${v.roomName || "room"}#${i}`;   // 인덱스 포함 → 동명 방 충돌 방지
                 const isNB = (v: { ruleId?: string }) => v.ruleId === "FV-DET-need_boundary";   // 벽 안 닫힘 = 경계 확인 필요
                 const validArea = (k: string) => { const n = parseFloat(manualAreas[k]); return isFinite(n) && n > 0; };
@@ -695,13 +698,16 @@ export function App() {
                     return next;
                   });
                 const setArea = (k: string, val: string) => setManualAreas((prev) => ({ ...prev, [k]: val }));
+                // NB(경계 미확정) 방은 백엔드 재판정이 없어 '확정'으로 세지 않음(6축 [2/6] false-resolution 방지).
+                // 확정 = 확인된 기하 방만. NB·미확인은 대기(판정 미완료).
                 let resolved = 0, excluded = 0, pending = 0;
                 viols.forEach((v, i) => {
                   const k = keyOf(v, i);
                   if (roomDecisions[k] === "excluded") { excluded++; return; }
-                  if (isNB(v) ? validArea(k) : roomDecisions[k] === "confirmed") resolved++; else pending++;
+                  if (!isNB(v) && roomDecisions[k] === "confirmed") resolved++; else pending++;
                 });
                 const nViol = viols.filter((v, i) => !isNB(v) && roomDecisions[keyOf(v, i)] === "confirmed" && v.status === "violation").length;
+                const judged = viols.some((v) => v.status === "violation" || v.status === "compliant");   // 실제 pass/fail 존재?(라벨 판정)
                 const btn = (active: boolean, on: string, off: string) => ({
                   fontSize: 10.5, padding: "2px 9px", borderRadius: 5, cursor: "pointer",
                   border: `1px solid ${active ? on : "rgba(150,150,160,0.4)"}`,
@@ -729,8 +735,8 @@ export function App() {
                     const excludedR = dec === "excluded";
                     const confirmed = !nb && dec === "confirmed";
                     const areaOk = nb && validArea(k);
-                    const resolvedR = confirmed || areaOk;
-                    const area = roomArea[v.roomName || ""];
+                    const resolvedR = confirmed;    // NB는 백엔드 재판정 없어 '해소'로 안 봄(6축 [2/6])
+                    const area = areaOf(v);          // center 기반 매칭(동명 방 오염 방지, 6축 [10])
                     const clickable = Array.isArray(v.center) && v.center.length >= 2;
                     const tone = v.status === "violation" ? { fg: "#e88", label: "위반" }
                       : v.status === "compliant" ? { fg: "#8d8", label: "적합" }
@@ -756,7 +762,9 @@ export function App() {
                             <span style={{ opacity: 0.7 }}> · {v.description}</span>
                           </div>
                         ) : (
-                          <div style={{ marginTop: 3, opacity: 0.8 }}>벽이 안 닫힘(문틈/병합) — 면적 직접 입력하거나 제외</div>
+                          <div style={{ marginTop: 3, opacity: 0.8 }}>
+                            {areaOk ? `면적 ${manualAreas[k]}㎡ 입력됨 — 판정은 감지기 인식 후(경계 미확정)` : "벽이 안 닫힘(문틈/병합) — 면적 직접 입력하거나 제외"}
+                          </div>
                         )}
                         <div style={{ display: "flex", gap: 6, marginTop: 5, alignItems: "center" }}>
                           {!nb ? (
@@ -783,7 +791,7 @@ export function App() {
                 {resolved > 0 ? (
                   <div style={{ fontSize: 11, marginTop: 7, padding: "6px 9px", borderRadius: 6,
                     background: "rgba(90,192,138,0.10)", color: "#9ecdb0" }}>
-                    확정 <b>{resolved}</b>개(사람 확인) · 위반 <b>{nViol}</b>{pending > 0 ? <span style={{ opacity: 0.7 }}> · 대기 {pending}개</span> : null}
+                    면적확인 <b>{resolved}</b>개{judged ? <> · 위반 <b>{nViol}</b></> : <span style={{ opacity: 0.7 }}> · pass/fail은 감지기 종류 지정 후</span>}{pending > 0 ? <span style={{ opacity: 0.7 }}> · 대기 {pending}개</span> : null}
                   </div>
                 ) : (
                   <div style={{ fontSize: 11, marginTop: 7, padding: "6px 9px", borderRadius: 6,

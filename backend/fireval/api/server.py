@@ -154,8 +154,8 @@ def _real_violations_ai(dxf_path, structure, occupancy, mount_height, labels=Non
         devices = {fac: [(x * f / 1000.0, y * f / 1000.0) for (x, y) in pts]
                    for fac, pts in raw.items() if fac in ("detector_smoke", "detector_heat")}
         meta = {"structure": structure if struct_known else "fireproof",
-                "occupancy": occupancy or "common", "detector_type": "smoke_12",
-                "mount_height": mount_height if height_known else 3.0}
+                "occupancy": occupancy or "common", "detector_type": "smoke_unknown",
+                "mount_height": mount_height if height_known else 3.0}   # HITL은 연기/열만·종별미상→bounded(6축 [7])
         viols_raw = checks.check_layout(eng_rooms, devices, meta)
         return _attach(_shape_violations(viols_raw, struct_known, height_known)) + _nb_viols(), rooms
     except Exception:

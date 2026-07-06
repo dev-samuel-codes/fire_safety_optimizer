@@ -6,9 +6,11 @@
 정직성 규율:
   - 면이 안 닫히면(no_face=문틈) 또는 다른 방 시드를 품으면(병합) → status='needs_boundary'
     → 자동 면적판정 안 함(HITL 경계확인으로). confident-wrong(건물 전체 병합)을 leak-guard가 막음.
-안전방향(과소=위험): 벽 내측 면은 약간 과소 → _SAFETY만큼 바깥 buffer로 과대(안전)쪽 바이어스.
-
+  - 면적 상한/하한(_MAX_ROOM/_MIN_ROOM) 밖이면 needs_boundary — 무명공간 병합(과대)·하위면 undercut
+    (과소) 의심 방을 자동판정 안 함(6축리뷰 [1][3] 부분방어). 안전그물=HITL 확인(자동 최종 없음).
 좌표: 폴리곤·center 모두 room_sam과 동일 규약 — polygon=X*f(mm), center=raw DXF(/f).
+버퍼 미사용(6축리뷰 [4][11]): centerline 면이 측정상 ±3% 정확하고, 바깥 buffer는 임계면적
+  false-violation + 감지기 point-in-polygon 과대포함(false-pass)을 유발해 제거함.
 """
 import math
 
@@ -26,7 +28,8 @@ from .room_sam import _room_seeds
 _WIN = 8000        # 시드 주변 창 (mm)
 _MINLEN = 1200     # 벽 최소 길이 (짧은 가구/치수/노트 배제)
 _ORTHO = 120       # 축정렬 허용오차 (대각 단면선·지시선 배제 → 방 오분할 방지)
-_SAFETY = 120      # 안전마진(mm): 면을 바깥으로 buffer. 과소(위험)를 과대(안전)로 바이어스.
+_MAX_ROOM = 400.0  # 단일 방 면적 상한(㎡). 초과 = 무명공간 병합 의심 → needs_boundary(과대 신뢰 방지).
+_MIN_ROOM = 2.0    # 하한(㎡). 미만 = 하위면 undercut 의심 → needs_boundary(과소 위반은폐 방지).
 
 
 def available():
@@ -102,8 +105,17 @@ def geom_faces(dxf_path):
     f = _to_mm_factor(doc)
     seeds = _room_seeds(doc, f)
     allpts = [(sx, sy) for _, sx, sy in seeds]
-    segs = [(e.dxf.start.x * f, e.dxf.start.y * f, e.dxf.end.x * f, e.dxf.end.y * f)
-            for e in doc.modelspace().query('LINE')]
+    # 예외 격리(6축 [9]): 한 LINE의 무효/NaN 좌표가 전체 방추출을 전멸시키지 않게 엔티티별 스킵.
+    segs = []
+    for e in doc.modelspace().query('LINE'):
+        try:
+            ax, ay = e.dxf.start.x * f, e.dxf.start.y * f
+            bx, by = e.dxf.end.x * f, e.dxf.end.y * f
+            if all(map(math.isfinite, (ax, ay, bx, by))):
+                segs.append((ax, ay, bx, by))
+        except Exception:
+            continue
+
     def _clean(poly, sx, sy):
         # leak-guard: 면이 다른 방 시드를 품으면 = 병합 → 거짓(confident-wrong 방지).
         if poly is None:
@@ -115,23 +127,28 @@ def geom_faces(dxf_path):
     for name, sx, sy in seeds:
         # 2-pass: 브리징 없이 먼저(정확도 보존). 닫힘 실패(no_face)일 때만 문틈 메워 재시도.
         # 병합(다른 시드 포함)이면 브리징이 더 병합시키므로 재시도 안 함(needs_boundary).
-        poly = _face(segs, sx, sy, bridge=False)
-        bridged = False
-        if not _clean(poly, sx, sy):
-            p2 = _face(segs, sx, sy, bridge=True) if poly is None else None
-            if _clean(p2, sx, sy):
-                poly, bridged = p2, True
-            else:
-                poly = None
+        poly, bridged = None, False
+        try:
+            poly = _face(segs, sx, sy, bridge=False)
+            if not _clean(poly, sx, sy):
+                p2 = _face(segs, sx, sy, bridge=True) if poly is None else None
+                if _clean(p2, sx, sy):
+                    poly, bridged = p2, True
+                else:
+                    poly = None
+        except Exception:
+            poly = None          # 이 방만 needs_boundary, 나머지는 계속(6축 [9])
         status, area, ring = 'needs_boundary', None, None
         if poly is not None:
-            safe = poly.buffer(_SAFETY)          # 안전마진(과대=안전)
-            status = 'geometry'
-            area = safe.area / 1e6
-            try:
-                ring = [[round(x, 1), round(y, 1)] for x, y in safe.exterior.coords]
-            except Exception:
-                ring = None
+            a = poly.area / 1e6
+            # 상한/하한 가드(6축 [1][3]): 무명공간 병합(과대)·하위면 undercut(과소) 의심 → 자동판정 거부.
+            if _MIN_ROOM <= a <= _MAX_ROOM:
+                status = 'geometry'
+                area = a                          # 버퍼 미사용 — centerline 원면(6축 [4][11])
+                try:
+                    ring = [[round(x, 1), round(y, 1)] for x, y in poly.exterior.coords]
+                except Exception:
+                    status, area = 'needs_boundary', None
         out.append({
             "name": name,
             "center": [round(sx / f, 2), round(sy / f, 2)],

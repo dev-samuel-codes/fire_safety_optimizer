@@ -93,9 +93,13 @@ def _room_seeds(doc, f):
         iscode = _is_room_code(t)
         if not (isname or iscode):
             continue
-        if iscode and not isname and _is_annot_layer(e.dxf.layer):
-            continue   # 코드패턴이지만 심볼/주기 레이어 → 방 아닌 주기(맞변35)
-        out.append((t, e.dxf.insert.x * f, e.dxf.insert.y * f))
+        try:
+            if iscode and not isname and _is_annot_layer(e.dxf.layer):
+                continue   # 코드패턴이지만 심볼/주기 레이어 → 방 아닌 주기(맞변35)
+            ix, iy = e.dxf.insert.x * f, e.dxf.insert.y * f
+        except Exception:
+            continue   # 무효 insert/layer인 라벨만 스킵(6축 [9]) — 전체 전멸 방지
+        out.append((t, ix, iy))
     return out
 
 

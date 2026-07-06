@@ -288,11 +288,35 @@ def check_layout(rooms, devices, meta=None):
                                 desc=f"{r.name}: 열감지기 {n}개(필요 {need_lo}~{need_hi}개) — 종별(차동식/정온식) 미상, 확인 필요",
                                 evidence=_poly_evidence(r.polygon)))
             if s_in:
-                # 도면이 연기 종별을 선언하면(smoke_3=50㎡ 등) 그대로, 아니면 smoke_12(150㎡).
-                # heat 분기와 대칭 — 선언된 3종 설계를 150㎡로 관대판정하면 false-pass.
-                smoke_dt = default_dtype if str(default_dtype).startswith("smoke") else "smoke_12"
-                out.append(check_detector_area(r, s_in, dtype=smoke_dt,
-                                               mount_height=mount_height, structure=structure))
+                n = len(s_in)
+                # 연기 종별이 명시(smoke_3/smoke_12)면 그대로, 미상이면 관대(150)/엄격(50) bounded —
+                # heat 분기와 대칭. 선언 없이 150㎡로 단정하면 3종(50㎡) 설계서 false-pass(6축 [7]).
+                if str(default_dtype) in ("smoke_3", "smoke_12"):
+                    out.append(check_detector_area(r, s_in, dtype=default_dtype,
+                                                   mount_height=mount_height, structure=structure))
+                else:
+                    try:
+                        a_lo = C.detector_area("smoke_12", mount_height, structure)   # 150㎡ 관대→최소개수
+                        a_hi = C.detector_area("smoke_3", mount_height, structure)     # 50㎡ 엄격→최대개수
+                    except (ValueError, KeyError):
+                        out.append(_mk("FV-DET-smoke_bounded", "not_applicable",
+                            desc=f"{r.name}: 연기감지기 {n}개 — 감지면적 범위외, 확인 필요",
+                            evidence=_poly_evidence(r.polygon)))
+                    else:
+                        need_lo = max(1, math.ceil(r.area / a_lo))
+                        need_hi = max(1, math.ceil(r.area / a_hi))
+                        if n >= need_hi:
+                            out.append(_mk("FV-DET-smoke_bounded", "compliant",
+                                desc=f"{r.name}: 연기감지기 {n}개 ≥ 최엄격 필요 {need_hi}개 → 종별무관 적합",
+                                evidence=_poly_evidence(r.polygon)))
+                        elif n < need_lo:
+                            out.append(_mk("FV-DET-smoke_bounded", "violation",
+                                desc=f"{r.name}: 연기감지기 {n}개 < 최관대 필요 {need_lo}개 → 종별무관 위반",
+                                evidence=_poly_evidence(r.polygon)))
+                        else:
+                            out.append(_mk("FV-DET-smoke_bounded", "not_applicable",
+                                desc=f"{r.name}: 연기감지기 {n}개(필요 {need_lo}~{need_hi}개) — 종별(1·2종/3종) 미상, 확인 필요",
+                                evidence=_poly_evidence(r.polygon)))
             if not s_in and not h_in:   # 무설치 방
                 from .detector_type import _MAYBE_EXEMPT
                 if any(x in (r.name or "") for x in _MAYBE_EXEMPT):
