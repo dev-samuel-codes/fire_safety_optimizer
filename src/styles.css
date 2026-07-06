@@ -1246,6 +1246,8 @@ svg {
 }
 
 .report-panel .report-sheet {
+  display: flex;
+  flex-direction: column;
   min-height: 0;
   padding: var(--report-tight-gap) 0 0;
   border-top: 1px solid rgba(111, 137, 166, 0.16);
@@ -1287,6 +1289,16 @@ svg {
   margin-top: var(--report-tight-gap);
   font-size: var(--compact-body-size);
   opacity: 0.6;
+}
+
+.report-markdown-preview + .report-note {
+  margin-top: auto;
+  font-size: clamp(5.8px, 0.82vh, 7px);
+  line-height: 1.15;
+  white-space: nowrap;
+  letter-spacing: 0;
+  transform: scaleX(0.88);
+  transform-origin: left center;
 }
 
 .panel-status {
