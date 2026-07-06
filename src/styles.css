@@ -16,6 +16,7 @@
   --compact-label-size: clamp(11px, 1.5vh, 12.5px);
   --compact-body-size: clamp(10.5px, 1.42vh, 11.5px);
   --compact-button-size: clamp(10.5px, 1.35vh, 11px);
+  --upload-guide-title-size: clamp(10.5px, 1.42vh, 11px);
   --left-panel-width: 230px;
   --right-panel-width: 240px;
   --center-panel-min-width: 420px;
@@ -474,7 +475,7 @@ svg {
 
 .left-panel .upload-guide strong {
   margin-bottom: clamp(4px, 0.6vh, 6px);
-  font-size: clamp(10.5px, 1.42vh, 11px);
+  font-size: var(--upload-guide-title-size);
 }
 
 .left-panel .upload-guide ul {
@@ -1757,7 +1758,7 @@ svg {
   border-top: 1px solid var(--overview-line-soft);
   background: rgba(1, 4, 8, 0.94);
   color: var(--overview-muted);
-  font-size: 13px;
+  font-size: var(--upload-guide-title-size);
 }
 
 .status-dot {
@@ -1774,7 +1775,12 @@ svg {
 
 .status-bar b {
   color: var(--overview-ink);
-  font-size: 15px;
+  font-size: inherit;
+}
+
+.status-warning {
+  color: #d9b060;
+  white-space: nowrap;
 }
 
 .status-bar em {

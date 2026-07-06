@@ -26,6 +26,7 @@ type DrawingInfo = {
   roomNames?: string[];
   layerNames?: string[];
   error?: string;
+  errorCode?: string;
   source?: "backend" | "viewer";
 };
 
@@ -81,6 +82,7 @@ export function App() {
   const [viewerDrawingInfo, setViewerDrawingInfo] = useState<DrawingInfo | null>(null);
   const effectiveDrawingInfo = getEffectiveDrawingInfo(analysis.drawingInfo ?? null, viewerDrawingInfo);
   const analysisError = analysis.drawingInfo?.error;
+  const statusDrawingInfo = analysisError ? null : effectiveDrawingInfo;
   const shouldShowReport = Boolean(uploadedFile && (analysis.drawingInfo || effectiveDrawingInfo));
 
   // 업로드 파일 + 구조/용도를 FormData로 전송 → 백엔드가 사실 + 방별요구 + (깨끗규격이면) 실 pass/fail 반환
@@ -492,24 +494,28 @@ export function App() {
               {effectiveDrawingInfo && !effectiveDrawingInfo.error ? (
                 <div className="drawing-facts">
                   <p className="analysis-kicker">
-                    업로드 도면에서 확인한 <b>실제 사실</b>
+                    {effectiveDrawingInfo.source === "viewer" && analysisError ? "브라우저 렌더링 보조 정보" : <>업로드 도면에서 확인한 <b>실제 사실</b></>}
                   </p>
-                  <div className="fact-label">
-                    방 {effectiveDrawingInfo.roomNames?.length ?? 0}개
-                  </div>
-                  <div className="fact-chip-row">
-                    {(effectiveDrawingInfo.roomNames ?? []).map((r) => (
-                      <span key={r} className="fact-chip">{r}</span>
-                    ))}
-                  </div>
-                  <div className="fact-label">
-                    소방 설비 레이어 {effectiveDrawingInfo.fireLayers?.length ?? 0}개
-                  </div>
-                  <div className="fact-chip-row">
-                    {(effectiveDrawingInfo.fireLayers ?? []).slice(0, 8).map((l) => (
-                      <span key={l} className="fact-chip fire">{l}</span>
-                    ))}
-                  </div>
+                  {effectiveDrawingInfo.source === "viewer" && analysisError ? null : (
+                    <>
+                      <div className="fact-label">
+                        방 {effectiveDrawingInfo.roomNames?.length ?? 0}개
+                      </div>
+                      <div className="fact-chip-row">
+                        {(effectiveDrawingInfo.roomNames ?? []).map((r) => (
+                          <span key={r} className="fact-chip">{r}</span>
+                        ))}
+                      </div>
+                      <div className="fact-label">
+                        소방 설비 레이어 {effectiveDrawingInfo.fireLayers?.length ?? 0}개
+                      </div>
+                      <div className="fact-chip-row">
+                        {(effectiveDrawingInfo.fireLayers ?? []).slice(0, 8).map((l) => (
+                          <span key={l} className="fact-chip fire">{l}</span>
+                        ))}
+                      </div>
+                    </>
+                  )}
                   {effectiveDrawingInfo.source === "viewer" ? (
                     <p className="analysis-subtle">
                       브라우저 렌더러 기준: 레이어 <b>{effectiveDrawingInfo.layerCount ?? 0}</b>개 · 요소 <b>{effectiveDrawingInfo.entityCount?.toLocaleString() ?? 0}</b>개
@@ -596,8 +602,10 @@ export function App() {
       <footer className="status-bar">
         <span className="status-dot" />
         <strong>상태: {toast}</strong>
-        {effectiveDrawingInfo && !effectiveDrawingInfo.error ? (
-          <span>확인: 방 <b>{effectiveDrawingInfo.roomNames?.length ?? 0}</b>개 · 소방레이어 <b>{effectiveDrawingInfo.fireLayers?.length ?? 0}</b></span>
+        {analysisError ? (
+          <span className="status-warning">정밀 분석 보류: {analysisError}</span>
+        ) : statusDrawingInfo && !statusDrawingInfo.error ? (
+          <span>확인: 방 <b>{statusDrawingInfo.roomNames?.length ?? 0}</b>개 · 소방레이어 <b>{statusDrawingInfo.fireLayers?.length ?? 0}</b></span>
         ) : null}
         <em><Icon name="shield" /> 한국 화재안전기술기준 (NFTC) · FireVal 엔진</em>
       </footer>
@@ -785,6 +793,7 @@ function getFactsMarkdown(fileName: string, drawingInfo: DrawingInfo | null, ana
   const fireLayers = drawingInfo?.fireLayers ?? [];
   const layerNames = drawingInfo?.layerNames ?? [];
   const hasFacts = Boolean(drawingInfo && !drawingInfo.error);
+  const viewerOnly = drawingInfo?.source === "viewer" && Boolean(analysisError);
   const sourceLabel = drawingInfo?.source === "viewer" ? "브라우저 CAD 렌더러" : "백엔드 FireVal 분석";
 
   return [
@@ -795,11 +804,17 @@ function getFactsMarkdown(fileName: string, drawingInfo: DrawingInfo | null, ana
     ...(hasFacts ? [`- 도형 요소: ${(drawingInfo?.entityCount ?? 0).toLocaleString()}개`] : []),
     ...(analysisError ? [`- 정밀 분석 상태: ${analysisError}`] : []),
     ``,
-    `## 추출된 방 (${rooms.length})`,
-    ...(rooms.length > 0 ? rooms.map((r) => `- ${r}`) : [`- 정밀 분석 연결 후 표시`]),
-    ``,
-    `## 소방 설비 레이어 (${fireLayers.length})`,
-    ...(fireLayers.length > 0 ? fireLayers.map((l) => `- ${l}`) : [`- 정밀 분석 연결 후 표시`]),
+    ...(viewerOnly ? [
+      `## 브라우저 렌더링 보조 정보`,
+      `- DWG/DXF 화면 렌더링은 완료됐지만 백엔드 정밀 분석은 보류됐습니다.`,
+      `- 아래 레이어 샘플은 방·소방 설비 판정 결과가 아닙니다.`,
+    ] : [
+      `## 추출된 방 (${rooms.length})`,
+      ...(rooms.length > 0 ? rooms.map((r) => `- ${r}`) : [`- 정밀 분석 연결 후 표시`]),
+      ``,
+      `## 소방 설비 레이어 (${fireLayers.length})`,
+      ...(fireLayers.length > 0 ? fireLayers.map((l) => `- ${l}`) : [`- 정밀 분석 연결 후 표시`]),
+    ]),
     ...(layerNames.length > 0 ? [
       ``,
       `## 렌더러 확인 레이어 샘플 (${layerNames.length})`,
@@ -832,6 +847,7 @@ function ReportPanel({
   analysisError?: string;
 }) {
   const hasFacts = Boolean(drawingInfo && !drawingInfo.error);
+  const viewerOnly = drawingInfo?.source === "viewer" && Boolean(analysisError);
   const factsMarkdown = getFactsMarkdown(fileName, drawingInfo, analysisError);
 
   return (
@@ -853,11 +869,11 @@ function ReportPanel({
           <strong>{fileName}</strong>
         </article>
         <article>
-          <span>레이어</span>
+          <span>{viewerOnly ? "렌더러 레이어" : "레이어"}</span>
           <strong>{hasFacts ? `${drawingInfo?.layerCount ?? 0}개` : "-"}</strong>
         </article>
         <article>
-          <span>도형 요소</span>
+          <span>{viewerOnly ? "렌더러 요소" : "도형 요소"}</span>
           <strong>{hasFacts ? `${(drawingInfo?.entityCount ?? 0).toLocaleString()}개` : "-"}</strong>
         </article>
       </div>
