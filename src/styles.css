@@ -23,7 +23,6 @@
   --resize-handle-width: clamp(8px, 0.8vw, 12px);
   --report-tight-gap: clamp(4px, 0.6vh, 7px);
   --report-tight-padding: clamp(7px, 1vh, 10px);
-  --report-preview-height: clamp(132px, 23vh, 220px);
   --report-preview-line-height: 1.34;
   --overview-bg: #03070b;
   --overview-ink: #f4f7fb;
@@ -1248,6 +1247,7 @@ svg {
 .report-panel .report-sheet {
   display: flex;
   flex-direction: column;
+  flex: 1 1 auto;
   min-height: 0;
   padding: var(--report-tight-gap) 0 0;
   border-top: 1px solid rgba(111, 137, 166, 0.16);
@@ -1260,7 +1260,8 @@ svg {
 }
 
 .report-markdown-preview {
-  max-height: var(--report-preview-height);
+  flex: 1 1 auto;
+  min-height: 0;
   margin: 0;
   overflow: auto;
   white-space: pre-wrap;
@@ -1292,7 +1293,7 @@ svg {
 }
 
 .report-markdown-preview + .report-note {
-  margin-top: auto;
+  margin-top: clamp(6px, 0.9vh, 10px);
   font-size: clamp(5.8px, 0.82vh, 7px);
   line-height: 1.15;
   white-space: nowrap;
