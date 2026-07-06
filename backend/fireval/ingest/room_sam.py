@@ -63,12 +63,23 @@ def _is_room_code(t):
 # 설비/표지 라벨 = 방 아님. "계단통로 유도등"처럼 방 키워드(통로)를 포함해도 걸러야 정직.
 _FIXTURE_WORDS = ("유도등", "표지", "감지기", "발신기", "소화기", "소화전", "스프링클러",
                   "경종", "수신기", "사이렌", "펌프", "밸브", "댐퍼", "함")
+# 심볼/주기 레이어 힌트: 코드-패턴 라벨(오탐 위험)이 여기 있으면 방 아닌 주기(맞변35 등).
+# 주의: "TEXT"는 넣지 않음 — 방 코드가 정상 text 레이어에 오는 도면(용산) 오배제 방지.
+_ANNOT_LAYER_HINT = ("SYM", "SYMBOL", "NOTE", "DIM", "LEADER", "HATCH", "LEGEND",
+                     "치수", "주기", "인출", "범례", "표제")
+
+
+def _is_annot_layer(layer):
+    L = (layer or "").upper()
+    return any(k in L for k in _ANNOT_LAYER_HINT)
 
 
 def _room_seeds(doc, f):
     """방 라벨 텍스트(이름 또는 코드) → [(name, wx, wy)] 월드좌표.
     이름=is_room_name(서술명), 코드=_is_room_code(가106 등) — 설계사별 라벨 관행 차이 흡수.
-    설비/표지 라벨(_FIXTURE_WORDS)은 방 키워드를 포함해도 배제(유도등·감지기 등 ≠ 방)."""
+    설비/표지 라벨(_FIXTURE_WORDS)은 방 키워드를 포함해도 배제(유도등·감지기 등 ≠ 방).
+    코드-경로 라벨이 심볼/주기 레이어에 있으면 배제(맞변35처럼 주기가 코드패턴에 걸리는 것 방지) —
+    측정: 진짜 방=ARCH/text 레이어, 주기 노이즈=SYM. name-경로·정상 레이어 코드는 불변."""
     from .room_extract_raster import is_room_name
     out = []
     for e in doc.modelspace().query("TEXT MTEXT"):
@@ -78,8 +89,13 @@ def _room_seeds(doc, f):
             continue
         if any(w in t for w in _FIXTURE_WORDS):
             continue
-        if is_room_name(t) or _is_room_code(t):
-            out.append((t, e.dxf.insert.x * f, e.dxf.insert.y * f))
+        isname = is_room_name(t)
+        iscode = _is_room_code(t)
+        if not (isname or iscode):
+            continue
+        if iscode and not isname and _is_annot_layer(e.dxf.layer):
+            continue   # 코드패턴이지만 심볼/주기 레이어 → 방 아닌 주기(맞변35)
+        out.append((t, e.dxf.insert.x * f, e.dxf.insert.y * f))
     return out
 
 

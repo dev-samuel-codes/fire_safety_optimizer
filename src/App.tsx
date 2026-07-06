@@ -47,7 +47,8 @@ type SymbolClass = {
   guess: string | null; needsHitl: boolean; isDetector: boolean;
   source: string; reason: string; thumbnail: string;
 };
-type Recognition = { classes: SymbolClass[]; legendTypes: string[]; facilityOptions: string[] } | null;
+type Recognition = { classes: SymbolClass[]; legendTypes: string[]; facilityOptions: string[];
+  detectorContext?: boolean; scopeHint?: string } | null;
 
 export function App() {
   const [toast, setToast] = useState("대기 중 · 도면을 업로드해주세요");
@@ -564,8 +565,17 @@ export function App() {
               <div style={{ marginBottom: 14 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "4px 0 6px" }}>
                   <span style={{ fontSize: 12.5, fontWeight: 600 }}>소방 심볼 인식</span>
-                  <span style={{ fontSize: 11, opacity: 0.6 }}>{recognition.classes.length}종 · 종류 지정 시 실판정</span>
+                  <span style={{ fontSize: 11, opacity: 0.6 }}>{recognition.classes.length}종{recognition.detectorContext === false ? "" : " · 종류 지정 시 실판정"}</span>
                 </div>
+                {recognition.scopeHint ? (
+                  <div style={{ fontSize: 10.5, opacity: 0.72, margin: "0 0 6px" }}>도면 설비: {recognition.scopeHint}</div>
+                ) : null}
+                {recognition.detectorContext === false ? (
+                  <div style={{ fontSize: 11, lineHeight: 1.5, margin: "0 0 8px", padding: "7px 9px", borderRadius: 6,
+                    background: "rgba(90,150,210,0.12)", color: "#9fc0e5", border: "1px solid rgba(90,150,210,0.28)" }}>
+                    ℹ️ 이 도면은 <b>감지기(자동화재탐지) 도면이 아닙니다</b> — 감지면적 판정 해당 없음. 아래 심볼은 참고용이라 종류 지정 없이 넘어가도 됩니다.
+                  </div>
+                ) : null}
                 {recognition.legendTypes.length > 0 ? (
                   <div style={{ fontSize: 11, opacity: 0.7, marginBottom: 6 }}>범례 감지: {recognition.legendTypes.slice(0, 5).join(", ")}</div>
                 ) : null}

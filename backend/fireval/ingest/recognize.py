@@ -117,6 +117,8 @@ class SymbolClass:
 class RecognitionResult:
     classes: list                  # [SymbolClass,...]
     legend_types: list = field(default_factory=list)   # 범례에서 읽은 종류명(있으면)
+    detector_ctx: bool = True      # '감지' 텍스트 존재 = 감지기 도면. False면 감지기 판정 해당 없음.
+    scope_hint: str = ""           # 도면에 언급된 소방설비(스프링클러 등) — 스코프 안내용.
 
     def hitl_manifest(self) -> list:
         """사람이 라벨해야 할 클래스만(개수 많은 순). UI가 이걸 띄운다."""
@@ -199,17 +201,22 @@ def recognize_symbols(doc, fire_layers: list | None = None) -> RecognitionResult
     msp = doc.modelspace()
     allow = set(fire_layers) if fire_layers else None
     groups: dict[tuple, SymbolClass] = {}
-    # 도면 유형 판별: '감지기' 텍스트가 하나도 없으면 이 도면은 감지기 도면이 아니다(예: 소방'기계'
-    # 도면=스프링클러). 그런 도면에서 FIRE 레이어를 '감지기'라 단정하면 오라벨 → 종류 미상으로.
-    has_detector_ctx = False
+    # 도면 유형 판별: 어떤 소방설비가 언급되나(범례/주기). '감지' 없으면 감지기 도면 아님(예: 소방
+    # '기계' 도면=간이스프링클러). 그런 도면서 FIRE 레이어를 '감지기'라 단정하면 오라벨 → 종류 미상으로.
+    _SCOPE_KW = [("감지", "자동화재탐지설비(감지기)"), ("스프링클러", "스프링클러설비"),
+                 ("소화전", "옥내소화전"), ("발신기", "발신기"), ("제연", "제연설비"),
+                 ("가스", "가스계 소화설비"), ("피난", "피난구·유도등")]
+    _present = set()
     for e in msp.query("TEXT MTEXT"):
         try:
-            tx = (e.plain_text() if e.dxftype() == "MTEXT" else e.dxf.text)
+            tx = (e.plain_text() if e.dxftype() == "MTEXT" else e.dxf.text) or ""
         except Exception:
             continue
-        if "감지" in (tx or ""):
-            has_detector_ctx = True
-            break
+        for kw, name in _SCOPE_KW:
+            if kw in tx:
+                _present.add(name)
+    has_detector_ctx = "자동화재탐지설비(감지기)" in _present
+    scope_hint = ", ".join(sorted(_present))
     for e in msp:
         t = e.dxftype()
         if t not in ("INSERT", "CIRCLE", "ELLIPSE"):
@@ -245,7 +252,8 @@ def recognize_symbols(doc, fire_layers: list | None = None) -> RecognitionResult
             groups[gid] = sc
         sc.positions.append(p)
     return RecognitionResult(classes=list(groups.values()),
-                             legend_types=_parse_legend_types(msp))
+                             legend_types=_parse_legend_types(msp),
+                             detector_ctx=has_detector_ctx, scope_hint=scope_hint)
 
 
 import math as _math
@@ -419,6 +427,8 @@ def result_manifest(doc, result: RecognitionResult) -> dict:
     classes.sort(key=lambda x: (not x["needsHitl"], -x["count"]))
     return {"classes": classes,
             "legendTypes": [t for t, _ in result.legend_types],
+            "detectorContext": result.detector_ctx,   # False면 감지기 도면 아님(판정 해당 없음)
+            "scopeHint": result.scope_hint,            # 언급된 설비(스프링클러 등)
             "facilityOptions": list(FACILITIES) + [IGNORE]}
 
 
