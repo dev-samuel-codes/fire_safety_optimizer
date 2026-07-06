@@ -64,6 +64,7 @@ export function App() {
   const workspaceRef = useRef<HTMLDivElement | null>(null);
   const drawingCardRef = useRef<HTMLDivElement | null>(null);
   const zoomLevelRef = useRef(zoomLevel);
+  const analysisRequestIdRef = useRef(0);
 
   // ── 백엔드(FireVal/FireOpt 엔진) 실시간 연결: POST /api/analyze ──
   const [structure, setStructure] = useState<string>("");   // "" 미상 | "fireproof" | "other"
@@ -79,17 +80,23 @@ export function App() {
       ruleId?: string; status?: string; severity?: string; description?: string;
     }>;
   }>({ drawingInfo: null, roomJudgments: [], violations: [] });
+  const [analysisPendingMessage, setAnalysisPendingMessage] = useState<string | null>(null);
   const [viewerDrawingInfo, setViewerDrawingInfo] = useState<DrawingInfo | null>(null);
   const effectiveDrawingInfo = getEffectiveDrawingInfo(analysis.drawingInfo ?? null, viewerDrawingInfo);
+  const visibleDrawingInfo = analysisPendingMessage ? null : effectiveDrawingInfo;
   const analysisError = analysis.drawingInfo?.error;
-  const statusDrawingInfo = analysisError ? null : effectiveDrawingInfo;
-  const shouldShowReport = Boolean(uploadedFile && (analysis.drawingInfo || effectiveDrawingInfo));
+  const statusDrawingInfo = analysisError || analysisPendingMessage ? null : effectiveDrawingInfo;
+  const displayedStatus = analysisPendingMessage ?? (analysisError ? `추출 실패: ${analysisError}` : toast);
+  const shouldShowReport = Boolean(uploadedFile && !analysisPendingMessage && (analysis.drawingInfo || effectiveDrawingInfo));
 
   // 업로드 파일 + 구조/용도를 FormData로 전송 → 백엔드가 사실 + 방별요구 + (깨끗규격이면) 실 pass/fail 반환
   const runAnalysis = useCallback((file?: File, structureVal?: string, occupancyVal?: string, mountVal?: string) => {
+    const requestId = analysisRequestIdRef.current + 1;
+    analysisRequestIdRef.current = requestId;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 30000);
     const options: RequestInit = { method: "POST", signal: controller.signal };
+    setAnalysisPendingMessage(file ? `${file.name} 분석 중… (도면 정보 추출)` : null);
     if (file) {
       const form = new FormData();
       form.append("file", file);
@@ -112,19 +119,35 @@ export function App() {
         return res.json();
       })
       .then((d) => {
+        if (analysisRequestIdRef.current !== requestId) {
+          return;
+        }
         setAnalysis({
           drawingInfo: d.drawingInfo ?? null,
           roomJudgments: d.roomJudgments ?? [],
           violations: d.violations ?? [],
         });
+        setAnalysisPendingMessage(null);
         if (file) {
           setToast(d.drawingInfo?.error ? `추출 실패: ${d.drawingInfo.error}` : `${file.name} 분석 완료`);
         }
       })
       .catch((err) => {
-        setToast(err?.name === "AbortError"
+        if (analysisRequestIdRef.current !== requestId) {
+          return;
+        }
+        const message = err?.name === "AbortError"
           ? "도면 분석 시간 초과 (30초) — 백엔드 상태를 확인해주세요"
-          : "백엔드 연결 실패 — 서버 상태를 확인해주세요");
+          : "백엔드 연결 실패 — 서버 상태를 확인해주세요";
+        setAnalysisPendingMessage(null);
+        if (file) {
+          setAnalysis({
+            drawingInfo: { fileName: file.name, error: message, errorCode: err?.name === "AbortError" ? "analysis_timeout" : "analysis_connection_failed" },
+            roomJudgments: [],
+            violations: [],
+          });
+        }
+        setToast(message);
       })
       .finally(() => clearTimeout(timer));
   }, []);
@@ -150,6 +173,7 @@ export function App() {
 
   const handleDrawingUpload = (file: File) => {
     setUploadedFile(file);
+    setAnalysis({ drawingInfo: null, roomJudgments: [], violations: [] });
     setViewerDrawingInfo(null);
     setZoomLevel((current) => Math.max(current, uploadedDrawingInitialZoom));
     setPanOffset({ x: 0, y: 0 });
@@ -491,34 +515,34 @@ export function App() {
                   </div>
                 </div>
               ) : null}
-              {effectiveDrawingInfo && !effectiveDrawingInfo.error ? (
+              {visibleDrawingInfo && !visibleDrawingInfo.error ? (
                 <div className="drawing-facts">
                   <p className="analysis-kicker">
-                    {effectiveDrawingInfo.source === "viewer" && analysisError ? "브라우저 렌더링 보조 정보" : <>업로드 도면에서 확인한 <b>실제 사실</b></>}
+                    {visibleDrawingInfo.source === "viewer" && analysisError ? "브라우저 렌더링 보조 정보" : <>업로드 도면에서 확인한 <b>실제 사실</b></>}
                   </p>
-                  {effectiveDrawingInfo.source === "viewer" && analysisError ? null : (
+                  {visibleDrawingInfo.source === "viewer" && analysisError ? null : (
                     <>
                       <div className="fact-label">
-                        방 {effectiveDrawingInfo.roomNames?.length ?? 0}개
+                        방 {visibleDrawingInfo.roomNames?.length ?? 0}개
                       </div>
                       <div className="fact-chip-row">
-                        {(effectiveDrawingInfo.roomNames ?? []).map((r) => (
+                        {(visibleDrawingInfo.roomNames ?? []).map((r) => (
                           <span key={r} className="fact-chip">{r}</span>
                         ))}
                       </div>
                       <div className="fact-label">
-                        소방 설비 레이어 {effectiveDrawingInfo.fireLayers?.length ?? 0}개
+                        소방 설비 레이어 {visibleDrawingInfo.fireLayers?.length ?? 0}개
                       </div>
                       <div className="fact-chip-row">
-                        {(effectiveDrawingInfo.fireLayers ?? []).slice(0, 8).map((l) => (
+                        {(visibleDrawingInfo.fireLayers ?? []).slice(0, 8).map((l) => (
                           <span key={l} className="fact-chip fire">{l}</span>
                         ))}
                       </div>
                     </>
                   )}
-                  {effectiveDrawingInfo.source === "viewer" ? (
+                  {visibleDrawingInfo.source === "viewer" ? (
                     <p className="analysis-subtle">
-                      브라우저 렌더러 기준: 레이어 <b>{effectiveDrawingInfo.layerCount ?? 0}</b>개 · 요소 <b>{effectiveDrawingInfo.entityCount?.toLocaleString() ?? 0}</b>개
+                      브라우저 렌더러 기준: 레이어 <b>{visibleDrawingInfo.layerCount ?? 0}</b>개 · 요소 <b>{visibleDrawingInfo.entityCount?.toLocaleString() ?? 0}</b>개
                     </p>
                   ) : null}
                   {analysisError ? (
@@ -592,7 +616,7 @@ export function App() {
           {shouldShowReport ? (
             <ReportPanel
               fileName={uploadedFile?.name ?? "선택된 도면 없음"}
-              drawingInfo={effectiveDrawingInfo}
+              drawingInfo={visibleDrawingInfo}
               analysisError={analysisError}
             />
           ) : null}
@@ -601,7 +625,7 @@ export function App() {
 
       <footer className="status-bar">
         <span className="status-dot" />
-        <strong>상태: {toast}</strong>
+        <strong>상태: {displayedStatus}</strong>
         {analysisError ? (
           <span className="status-warning">정밀 분석 보류: {analysisError}</span>
         ) : statusDrawingInfo && !statusDrawingInfo.error ? (
@@ -612,7 +636,7 @@ export function App() {
       <ActionDialog
         dialog={dialog}
         fileName={uploadedFile?.name ?? "선택된 도면 없음"}
-        drawingInfo={effectiveDrawingInfo}
+        drawingInfo={visibleDrawingInfo}
         analysisError={analysisError}
         onClose={() => setDialog(null)}
       />
