@@ -22,7 +22,7 @@ React(TypeScript/브라우저)와 Python(shapely/scipy)은 **코드를 공유하
 프론트는 "무엇을 보내고 무엇을 받는지"만 알면 되고, 엔진 내부(방 추출이 EXCLUDE 레시피든 DL이든)는 몰라도 됩니다. **계약이 경계**입니다.
 
 ## 3. API 계약 (v2 — 현재 구현, 정직성 원칙)
-### `GET /api/health` → `{ "status":"ok", "engine":"FireVal+FireOpt", "rules": <int> }`
+### `GET /api/health` → `{ "status":"ok", "engine":"FireVal+FireOpt", "rules": <int>, "dwg2dxfAvailable": true, "dwgreadAvailable": true }`
 
 ### `POST /api/analyze` (multipart: `file`=DWG/DXF, 없으면 사실 없음)
 응답(JSON):
@@ -31,8 +31,12 @@ React(TypeScript/브라우저)와 Python(shapely/scipy)은 **코드를 공유하
   // 업로드 도면에서 '확실히 추출되는 사실'(파일 있을 때만; 없으면 null).
   // DWG는 서버가 dwg2dxf로 변환 후 ezdxf 파싱.
   "drawingInfo": { "fileName":"...", "layerCount":326, "entityCount":20135,
-                   "fireLayers":["FIRE-01","SP_HEAD-08"], "roomNames":["보육실","유희실"] },
+                   "fireLayers":["FIRE-01","SP_HEAD-08"], "roomNames":["보육실","유희실"],
+                   "analysisStatus":"ok", "analysisSource":"dwg2dxf" },
                    // 파싱 실패 시: { "fileName":"...", "error":"..." }
+                   // 기본 DWG→DXF가 깨졌지만 복구 가능하면:
+                   // { "analysisStatus":"recovered", "analysisSource":"dwgread-json",
+                   //   "analysisWarnings":["기본 DWG→DXF 변환 결과를 ezdxf가 읽지 못했습니다: ..."] }
   "violations":       [],   // NFTC 적정성 판정: 인식 파이프라인 연결 후(현재 빈 배열)
   "recommendations":  [],
   "judgmentStatus":   "pending-recognition"

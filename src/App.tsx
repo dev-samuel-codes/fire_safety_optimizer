@@ -27,6 +27,9 @@ type DrawingInfo = {
   layerNames?: string[];
   error?: string;
   errorCode?: string;
+  analysisStatus?: "ok" | "recovered" | "failed";
+  analysisSource?: string;
+  analysisWarnings?: string[];
   source?: "backend" | "viewer";
 };
 
@@ -85,8 +88,10 @@ export function App() {
   const effectiveDrawingInfo = getEffectiveDrawingInfo(analysis.drawingInfo ?? null, viewerDrawingInfo);
   const visibleDrawingInfo = analysisPendingMessage ? null : effectiveDrawingInfo;
   const analysisError = analysis.drawingInfo?.error;
+  const analysisRecovered = analysis.drawingInfo?.analysisStatus === "recovered";
+  const analysisWarnings = analysis.drawingInfo?.analysisWarnings ?? [];
   const statusDrawingInfo = analysisError || analysisPendingMessage ? null : effectiveDrawingInfo;
-  const displayedStatus = analysisPendingMessage ?? (analysisError ? `추출 실패: ${analysisError}` : toast);
+  const displayedStatus = analysisPendingMessage ?? (analysisError ? `추출 실패: ${analysisError}` : analysisRecovered ? `복구 분석 완료: ${uploadedFile?.name ?? analysis.drawingInfo?.fileName ?? "도면"}` : toast);
   const shouldShowReport = Boolean(uploadedFile && !analysisPendingMessage && (analysis.drawingInfo || effectiveDrawingInfo));
 
   // 업로드 파일 + 구조/용도를 FormData로 전송 → 백엔드가 사실 + 방별요구 + (깨끗규격이면) 실 pass/fail 반환
@@ -129,7 +134,7 @@ export function App() {
         });
         setAnalysisPendingMessage(null);
         if (file) {
-          setToast(d.drawingInfo?.error ? `추출 실패: ${d.drawingInfo.error}` : `${file.name} 분석 완료`);
+          setToast(d.drawingInfo?.error ? `추출 실패: ${d.drawingInfo.error}` : d.drawingInfo?.analysisStatus === "recovered" ? `${file.name} 복구 분석 완료` : `${file.name} 분석 완료`);
         }
       })
       .catch((err) => {
@@ -419,9 +424,19 @@ export function App() {
                   <p style={{ fontSize: 12.5, opacity: 0.7, padding: "4px" }}>{analysis.drawingInfo.error}</p>
                 ) : (
                   <div style={{ fontSize: 12.5, lineHeight: 1.7, padding: "2px 4px" }}>
+                    {analysis.drawingInfo.analysisStatus === "recovered" ? (
+                      <div style={{ marginBottom: 6, color: "#facc15" }}>복구 분석 · {getAnalysisSourceLabel(analysis.drawingInfo.analysisSource)}</div>
+                    ) : null}
                     <div>레이어 <b>{analysis.drawingInfo.layerCount}</b> · 요소 <b>{analysis.drawingInfo.entityCount?.toLocaleString()}</b></div>
                     <div style={{ marginTop: 6, opacity: 0.85 }}>소방 레이어: {(analysis.drawingInfo.fireLayers ?? []).slice(0, 6).join(", ") || "—"}</div>
                     <div style={{ marginTop: 6, opacity: 0.85 }}>실명: {(analysis.drawingInfo.roomNames ?? []).slice(0, 8).join(", ") || "—"}</div>
+                    {(analysis.drawingInfo.analysisWarnings ?? []).length > 0 ? (
+                      <div style={{ marginTop: 8, opacity: 0.72 }}>
+                        {(analysis.drawingInfo.analysisWarnings ?? []).slice(0, 2).map((warning) => (
+                          <div key={warning}>※ {warning}</div>
+                        ))}
+                      </div>
+                    ) : null}
                   </div>
                 )}
               </div>
@@ -522,7 +537,7 @@ export function App() {
               {visibleDrawingInfo && !visibleDrawingInfo.error ? (
                 <div className="drawing-facts">
                   <p className="analysis-kicker">
-                    {visibleDrawingInfo.source === "viewer" && analysisError ? "브라우저 렌더링 보조 정보" : <>업로드 도면에서 확인한 <b>실제 사실</b></>}
+                    {visibleDrawingInfo.source === "viewer" && analysisError ? "브라우저 렌더링 보조 정보" : analysisRecovered ? <>복구 분석으로 확인한 <b>도면 사실</b></> : <>업로드 도면에서 확인한 <b>실제 사실</b></>}
                   </p>
                   {visibleDrawingInfo.source === "viewer" && analysisError ? null : (
                     <>
@@ -553,6 +568,18 @@ export function App() {
                     <p className="analysis-subtle">
                       정밀 분석 보류: {analysisError}
                     </p>
+                  ) : null}
+                  {analysisRecovered ? (
+                    <p className="analysis-subtle">
+                      기본 DXF 정밀 파싱은 실패했지만 {getAnalysisSourceLabel(analysis.drawingInfo?.analysisSource)} 경로로 레이어·텍스트 정보를 복구했습니다.
+                    </p>
+                  ) : null}
+                  {analysisRecovered && analysisWarnings.length > 0 ? (
+                    <div className="analysis-subtle">
+                      {analysisWarnings.slice(0, 3).map((warning) => (
+                        <div key={warning}>※ {warning}</div>
+                      ))}
+                    </div>
                   ) : null}
                 </div>
               ) : (
@@ -622,6 +649,7 @@ export function App() {
               fileName={uploadedFile?.name ?? "선택된 도면 없음"}
               drawingInfo={visibleDrawingInfo}
               analysisError={analysisError}
+              analysisRecovered={analysisRecovered}
             />
           ) : null}
         </aside>
@@ -632,6 +660,8 @@ export function App() {
         <strong>상태: {displayedStatus}</strong>
         {analysisError ? (
           <span className="status-warning">정밀 분석 보류: {analysisError}</span>
+        ) : analysisRecovered ? (
+          <span className="status-warning">복구 분석: 방 <b>{statusDrawingInfo?.roomNames?.length ?? 0}</b>개 · 소방레이어 <b>{statusDrawingInfo?.fireLayers?.length ?? 0}</b></span>
         ) : statusDrawingInfo && !statusDrawingInfo.error ? (
           <span>확인: 방 <b>{statusDrawingInfo.roomNames?.length ?? 0}</b>개 · 소방레이어 <b>{statusDrawingInfo.fireLayers?.length ?? 0}</b></span>
         ) : null}
@@ -642,6 +672,7 @@ export function App() {
         fileName={uploadedFile?.name ?? "선택된 도면 없음"}
         drawingInfo={visibleDrawingInfo}
         analysisError={analysisError}
+        analysisRecovered={analysisRecovered}
         onClose={() => setDialog(null)}
       />
       </main>
@@ -816,13 +847,23 @@ function getEffectiveDrawingInfo(backendInfo: DrawingInfo | null, viewerInfo: Dr
   return viewerInfo;
 }
 
-function getFactsMarkdown(fileName: string, drawingInfo: DrawingInfo | null, analysisError?: string) {
+function getAnalysisSourceLabel(source?: string) {
+  if (source === "dwgread-json") {
+    return "DWG JSON 복구";
+  }
+  if (source === "dwg2dxf-minimal") {
+    return "minimal DXF 복구";
+  }
+  return "백엔드 정밀 분석";
+}
+
+function getFactsMarkdown(fileName: string, drawingInfo: DrawingInfo | null, analysisError?: string, analysisRecovered?: boolean) {
   const rooms = drawingInfo?.roomNames ?? [];
   const fireLayers = drawingInfo?.fireLayers ?? [];
   const layerNames = drawingInfo?.layerNames ?? [];
   const hasFacts = Boolean(drawingInfo && !drawingInfo.error);
   const viewerOnly = drawingInfo?.source === "viewer" && Boolean(analysisError);
-  const sourceLabel = drawingInfo?.source === "viewer" ? "브라우저 CAD 렌더러" : "백엔드 FireVal 분석";
+  const sourceLabel = drawingInfo?.source === "viewer" ? "브라우저 CAD 렌더러" : analysisRecovered ? getAnalysisSourceLabel(drawingInfo?.analysisSource) : "백엔드 FireVal 분석";
 
   return [
     `# 소방 도면 사실 요약 — ${drawingInfo?.fileName ?? fileName}`,
@@ -831,6 +872,8 @@ function getFactsMarkdown(fileName: string, drawingInfo: DrawingInfo | null, ana
     hasFacts ? `- 레이어: ${drawingInfo?.layerCount ?? "-"}개` : `- (업로드된 도면 없음 또는 파싱 실패)`,
     ...(hasFacts ? [`- 도형 요소: ${(drawingInfo?.entityCount ?? 0).toLocaleString()}개`] : []),
     ...(analysisError ? [`- 정밀 분석 상태: ${analysisError}`] : []),
+    ...(analysisRecovered ? [`- 정밀 분석 상태: 기본 DXF 파싱 실패 후 복구 분석 완료`] : []),
+    ...((drawingInfo?.analysisWarnings ?? []).map((warning) => `- 주의: ${warning}`)),
     ``,
     ...(viewerOnly ? [
       `## 브라우저 렌더링 보조 정보`,
@@ -869,14 +912,16 @@ function ReportPanel({
   fileName,
   drawingInfo,
   analysisError,
+  analysisRecovered,
 }: {
   fileName: string;
   drawingInfo: DrawingInfo | null;
   analysisError?: string;
+  analysisRecovered?: boolean;
 }) {
   const hasFacts = Boolean(drawingInfo && !drawingInfo.error);
   const viewerOnly = drawingInfo?.source === "viewer" && Boolean(analysisError);
-  const factsMarkdown = getFactsMarkdown(fileName, drawingInfo, analysisError);
+  const factsMarkdown = getFactsMarkdown(fileName, drawingInfo, analysisError, analysisRecovered);
 
   return (
     <section className="report-panel">
@@ -907,6 +952,9 @@ function ReportPanel({
       </div>
       <div className="report-sheet">
         <h3>소방 도면 사실 요약</h3>
+        {analysisRecovered ? (
+          <p className="report-note">기본 DXF 정밀 파싱 실패 후 {getAnalysisSourceLabel(drawingInfo?.analysisSource)}로 복구한 요약입니다.</p>
+        ) : null}
         <pre className="report-markdown-preview">
           {factsMarkdown}
         </pre>
@@ -921,15 +969,17 @@ function ActionDialog({
   fileName,
   drawingInfo,
   analysisError,
+  analysisRecovered,
   onClose,
 }: {
   dialog: DialogType;
   fileName: string;
   drawingInfo: DrawingInfo | null;
   analysisError?: string;
+  analysisRecovered?: boolean;
   onClose: () => void;
 }) {
-  const factsMarkdown = getFactsMarkdown(fileName, drawingInfo, analysisError);
+  const factsMarkdown = getFactsMarkdown(fileName, drawingInfo, analysisError, analysisRecovered);
 
   if (!dialog) {
     return null;
