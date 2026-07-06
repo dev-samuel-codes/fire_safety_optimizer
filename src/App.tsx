@@ -5,7 +5,6 @@ import type { LayerId } from "./types";
 // CAD 뷰어는 도면 자체의 레이어 가시성으로 렌더 — 앱 레이어 필터는 미연결(PART B 예정)
 const NO_VISIBLE_LAYERS = new Set<LayerId>();
 
-type ToolId = "pan" | "zoomIn" | "zoomOut" | "fit";
 type DialogType = "export" | null;
 type PanOffset = { x: number; y: number };
 type DragState = PanOffset & { pointerId: number; startX: number; startY: number };
@@ -34,7 +33,6 @@ type DrawingInfo = {
 };
 
 const zoomMin = 25;
-const zoomButtonStep = 25;
 const zoomWheelStep = 10;
 const uploadedDrawingInitialZoom = 150;
 const designViewport = { width: 1280, height: 720 };
@@ -46,18 +44,10 @@ const panelResizeLimits = {
   centerMin: 420,
 };
 
-const toolDefinitions: Array<{ id: ToolId; label: string; icon: string; command: string }> = [
-  { id: "pan", label: "이동", icon: "move", command: "PAN" },
-  { id: "zoomIn", label: "확대", icon: "zoomIn", command: "ZOOM +" },
-  { id: "zoomOut", label: "축소", icon: "zoomOut", command: "ZOOM -" },
-  { id: "fit", label: "맞춤", icon: "fit", command: "ZOOM EXTENTS" },
-];
-
 export function App() {
   const viewportFrame = useViewportFrame();
   const [toast, setToast] = useState("대기 중 · 도면을 업로드해주세요");
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
-  const [activeTool, setActiveTool] = useState<ToolId>("pan");
   const [zoomLevel, setZoomLevel] = useState(100);
   const [panOffset, setPanOffset] = useState<PanOffset>({ x: 0, y: 0 });
   const [dragState, setDragState] = useState<DragState | null>(null);
@@ -206,24 +196,10 @@ export function App() {
     }
   };
 
-  const handleToolAction = (toolId: ToolId) => {
-    const tool = toolDefinitions.find((item) => item.id === toolId);
-    if (!tool) {
-      return;
-    }
-
-    if (toolId === "zoomIn") {
-      setZoomLevel((current) => clampZoom(current + zoomButtonStep));
-    } else if (toolId === "zoomOut") {
-      setZoomLevel((current) => clampZoom(current - zoomButtonStep));
-    } else if (toolId === "fit") {
-      setZoomLevel(100);
-      setPanOffset({ x: 0, y: 0 });
-    } else {
-      setActiveTool(toolId);
-    }
-
-    setToast(`${tool.label} 도구가 활성화되었습니다.`);
+  const handleFitView = () => {
+    setZoomLevel(100);
+    setPanOffset({ x: 0, y: 0 });
+    setToast("맞춤 명령 실행 · ZOOM EXTENTS");
   };
 
   const handleDrawingWheel = useCallback((event: globalThis.WheelEvent) => {
@@ -266,7 +242,6 @@ export function App() {
       x: panOffset.x,
       y: panOffset.y,
     });
-    setActiveTool("pan");
   };
 
   const handleDrawingPointerMove = (event: PointerEvent<HTMLDivElement>) => {
@@ -465,7 +440,7 @@ export function App() {
         <section className="canvas-panel">
           <div
             ref={drawingCardRef}
-            className={`drawing-card autocad-space tool-${activeTool} ${dragState ? "is-panning" : ""}`}
+            className={`drawing-card autocad-space tool-pan ${dragState ? "is-panning" : ""}`}
             onPointerDown={handleDrawingPointerDown}
             onPointerMove={handleDrawingPointerMove}
             onPointerUp={stopDrawingPan}
@@ -489,7 +464,7 @@ export function App() {
               onPointerDown={(event) => event.stopPropagation()}
               onClick={(event) => {
                 event.stopPropagation();
-                handleToolAction("fit");
+                handleFitView();
               }}
               aria-label="도면 맞춤"
             >
@@ -1030,43 +1005,14 @@ function Icon({ name }: { name: string }) {
   switch (name) {
     case "flame":
       return <svg viewBox="0 0 24 24" {...common}><path d="M3 10h18M5 10v9M9 10v9M15 10v9M19 10v9M4 21h16M12 3 3 8h18Z" /></svg>;
-    case "plan":
-      return <svg viewBox="0 0 24 24" {...common}><rect x="4" y="4" width="16" height="16" rx="2" /><path d="M9 4v6h6V4M9 20v-5H4M15 20v-7h5" /></svg>;
-    case "folder":
-      return <svg viewBox="0 0 24 24" {...common}><path d="M4 6h6l2 2h8v10a2 2 0 0 1-2 2H4Z" /><path d="M4 6v12" /></svg>;
-    case "spark":
-      return <svg viewBox="0 0 24 24" {...common}><path d="M12 3l2.1 6 6 2.1-6 2.1L12 21l-2.1-7.8-6-2.1 6-2.1Z" /></svg>;
-    case "optimize":
-      return <svg viewBox="0 0 24 24" {...common}><path d="M4 17l5-5 4 4 7-9" /><path d="M15 7h5v5" /></svg>;
-    case "report":
     case "document":
       return <svg viewBox="0 0 24 24" {...common}><path d="M6 3h8l4 4v14H6Z" /><path d="M14 3v5h4M9 13h6M9 17h6" /></svg>;
-    case "settings":
-      return <svg viewBox="0 0 24 24" {...common}><circle cx="12" cy="12" r="3" /><path d="M19 12a7 7 0 0 0-.1-1l2-1.6-2-3.4-2.4 1a8 8 0 0 0-1.8-1L12 3H8l-.7 3a8 8 0 0 0-1.8 1l-2.4-1-2 3.4L3.1 11a7 7 0 0 0 0 2L1.1 14.6l2 3.4 2.4-1a8 8 0 0 0 1.8 1L8 21h4l.7-3a8 8 0 0 0 1.8-1l2.4 1 2-3.4-2-1.6a7 7 0 0 0 .1-1Z" /></svg>;
-    case "eye":
-      return <svg viewBox="0 0 24 24" {...common}><path d="M2 12s4-6 10-6 10 6 10 6-4 6-10 6S2 12 2 12Z" /><circle cx="12" cy="12" r="3" /></svg>;
     case "layers":
       return <svg viewBox="0 0 24 24" {...common}><path d="M12 3 3 8l9 5 9-5Z" /><path d="m3 12 9 5 9-5M3 16l9 5 9-5" /></svg>;
     case "chevron":
       return <svg viewBox="0 0 24 24" {...common}><path d="m7 9 5 5 5-5" /></svg>;
-    case "cursor":
-      return <svg viewBox="0 0 24 24" {...common}><path d="M5 3l12 9-6 1-3 6Z" /></svg>;
-    case "move":
-      return <svg viewBox="0 0 24 24" {...common}><path d="M12 3v18M3 12h18M7 7l-4 5 4 5M17 7l4 5-4 5M7 7l5-4 5 4M7 17l5 4 5-4" /></svg>;
-    case "rotate":
-      return <svg viewBox="0 0 24 24" {...common}><path d="M20 12a8 8 0 1 1-2.3-5.7" /><path d="M20 4v6h-6" /></svg>;
-    case "ruler":
-      return <svg viewBox="0 0 24 24" {...common}><path d="m4 17 13-13 3 3L7 20Z" /><path d="m14 7 3 3M11 10l2 2M8 13l3 3" /></svg>;
-    case "zoomIn":
-      return <svg viewBox="0 0 24 24" {...common}><circle cx="10" cy="10" r="6" /><path d="m15 15 5 5M10 7v6M7 10h6" /></svg>;
-    case "zoomOut":
-      return <svg viewBox="0 0 24 24" {...common}><circle cx="10" cy="10" r="6" /><path d="m15 15 5 5M7 10h6" /></svg>;
     case "fit":
       return <svg viewBox="0 0 24 24" {...common}><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5" /></svg>;
-    case "close":
-      return <svg viewBox="0 0 24 24" {...common}><path d="M6 6l12 12M18 6 6 18" /></svg>;
-    case "arrow":
-      return <svg viewBox="0 0 24 24" {...common}><path d="M5 12h14M13 6l6 6-6 6" /></svg>;
     case "download":
       return <svg viewBox="0 0 24 24" {...common}><path d="M12 3v12" /><path d="m7 10 5 5 5-5" /><path d="M5 21h14" /></svg>;
     case "share":
