@@ -33,14 +33,23 @@ def _cors(resp):
     return resp
 
 
+def _resolve_dwg2dxf():
+    configured = os.environ.get("DWG2DXF")
+    if configured:
+        return configured if os.path.exists(configured) else None
+    return shutil.which("dwg2dxf")
+
+
 @app.get("/api/health")
 def health():
-    return jsonify({"status": "ok", "engine": "FireVal+FireOpt", "rules": len(RULE_CATALOG)})
-
-
-# DWG→DXF 변환기: 환경변수 > PATH > 개발 머신 기본경로(배포 시 DWG2DXF env 또는 PATH로 지정).
-_DWG2DXF = (os.environ.get("DWG2DXF") or shutil.which("dwg2dxf")
-            or "/A.I_DATA/jbnu/miniconda3/envs/dwgtools/bin/dwg2dxf")
+    dwg2dxf_path = _resolve_dwg2dxf()
+    return jsonify({
+        "status": "ok",
+        "engine": "FireVal+FireOpt",
+        "rules": len(RULE_CATALOG),
+        "dwg2dxfAvailable": bool(dwg2dxf_path),
+        "dwg2dxfPath": dwg2dxf_path,
+    })
 
 
 def _parse_drawing(file_storage, structure=None, occupancy="", mount_height=3.0):
@@ -61,17 +70,22 @@ def _parse_drawing(file_storage, structure=None, occupancy="", mount_height=3.0)
     dxf_path = tmp.name
     cleanup = [tmp.name]
     if ext == ".dwg":
-        if not _DWG2DXF or not os.path.exists(_DWG2DXF):
-            return {"fileName": name, "error": "서버에 DWG 변환 도구(dwg2dxf)가 없습니다."}, [], None, cleanup
+        dwg2dxf = _resolve_dwg2dxf()
+        if not dwg2dxf:
+            return {
+                "fileName": name,
+                "error": "서버에 DWG 변환 도구(dwg2dxf)가 없습니다.",
+                "errorCode": "dwg2dxf_missing",
+            }, [], None, cleanup
         dxf_path = tmp.name + ".dxf"
         cleanup.append(dxf_path)
         try:
-            r = subprocess.run([_DWG2DXF, "-y", "-o", dxf_path, tmp.name],
+            r = subprocess.run([dwg2dxf, "-y", "-o", dxf_path, tmp.name],
                                capture_output=True, text=True, timeout=60)
         except subprocess.TimeoutExpired:
-            return {"fileName": name, "error": "DWG 변환 시간 초과"}, [], None, cleanup
+            return {"fileName": name, "error": "DWG 변환 시간 초과", "errorCode": "dwg2dxf_timeout"}, [], None, cleanup
         if r.returncode != 0 or not os.path.exists(dxf_path):
-            return {"fileName": name, "error": "DWG→DXF 변환 실패"}, [], None, cleanup
+            return {"fileName": name, "error": "DWG→DXF 변환 실패", "errorCode": "dwg2dxf_failed"}, [], None, cleanup
     try:
         import ezdxf
         doc = ezdxf.readfile(dxf_path)

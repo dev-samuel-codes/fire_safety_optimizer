@@ -1778,6 +1778,11 @@ svg {
   font-size: inherit;
 }
 
+.status-warning {
+  color: #d9b060;
+  white-space: nowrap;
+}
+
 .status-bar em {
   display: flex;
   align-items: center;
