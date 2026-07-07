@@ -103,6 +103,7 @@ export function App() {
   const analysisWarnings = analysis.drawingInfo?.analysisWarnings ?? [];
   const statusDrawingInfo = analysisError || analysisPendingMessage ? null : effectiveDrawingInfo;
   const displayedStatus = analysisPendingMessage ?? (analysisError ? `추출 실패: ${analysisError}` : analysisRecovered ? `복구 분석 완료: ${uploadedFile?.name ?? analysis.drawingInfo?.fileName ?? "도면"}` : toast);
+  const [showReport, setShowReport] = useState(false);   // 뷰 토글: 기본=분석·판정, 보고서 탭 클릭 시만 보고서
   const shouldShowReport = Boolean(uploadedFile && !analysisPendingMessage && (analysis.drawingInfo || effectiveDrawingInfo));
 
   // 소방 심볼 인식(HITL 명명): 업로드 시 /api/recognize 매니페스트, labels=사용자 지정 종류
@@ -251,6 +252,7 @@ export function App() {
     setRecognition(null);
     setLabels({});
     setAiResult(null);
+    setShowReport(false);   // 업로드 시 분석·판정 뷰로 시작(보고서는 사용자가 탭 선택 시만)
     setAnalysis({ drawingInfo: null, roomJudgments: [], violations: [] });   // 이전 파일 결과 잔류 방지
     setToast(`${file.name} 분석 중… (도면 정보 + 방·심볼 추출)`);
     runAnalysis(file, structure, occupancy, mount);
@@ -641,7 +643,23 @@ export function App() {
         />
 
         <aside className="right-panel">
-          {!shouldShowReport ? (
+          {uploadedFile ? (
+            <div style={{ display: "flex", gap: 6, margin: "0 0 10px" }}>
+              <button onClick={() => setShowReport(false)}
+                style={{ flex: 1, fontSize: 12, fontWeight: 600, padding: "7px", borderRadius: 7, cursor: "pointer",
+                  border: `1px solid ${!showReport ? "rgba(130,160,210,0.6)" : "rgba(120,130,150,0.3)"}`,
+                  background: !showReport ? "rgba(90,120,180,0.3)" : "transparent", color: !showReport ? "#dce7f8" : "#9aa6ba" }}>
+                🔍 분석 · 판정
+              </button>
+              <button onClick={() => setShowReport(true)} disabled={!shouldShowReport}
+                style={{ flex: 1, fontSize: 12, fontWeight: 600, padding: "7px", borderRadius: 7, cursor: shouldShowReport ? "pointer" : "not-allowed",
+                  border: `1px solid ${showReport ? "rgba(130,160,210,0.6)" : "rgba(120,130,150,0.3)"}`,
+                  background: showReport ? "rgba(90,120,180,0.3)" : "transparent", color: showReport ? "#dce7f8" : "#9aa6ba", opacity: shouldShowReport ? 1 : 0.5 }}>
+                📄 보고서
+              </button>
+            </div>
+          ) : null}
+          {!showReport ? (
             <section className="analysis-panel fit-panel">
               <div className="list-header">
                 <h3>법규 판정 (NFTC)</h3>
@@ -726,7 +744,7 @@ export function App() {
               )}
             </section>
           ) : null}
-          {uploadedFile ? (
+          {uploadedFile && !showReport ? (
             <section className="analysis-panel">
             {recognition && recognition.classes.length > 0 ? (
               <div style={{ marginBottom: 14 }}>
@@ -968,7 +986,7 @@ export function App() {
             </p>
             </section>
           ) : null}
-          {shouldShowReport ? (
+          {showReport ? (
             <ReportPanel
               fileName={uploadedFile?.name ?? "선택된 도면 없음"}
               drawingInfo={visibleDrawingInfo}
