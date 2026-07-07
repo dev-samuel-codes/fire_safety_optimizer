@@ -724,6 +724,10 @@ export function App() {
                   도면을 업로드하면 이 도면의 방·소방 설비를 추출합니다.
                 </p>
               )}
+            </section>
+          ) : null}
+          {uploadedFile ? (
+            <section className="analysis-panel">
             {recognition && recognition.classes.length > 0 ? (
               <div style={{ marginBottom: 14 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "4px 0 6px" }}>
