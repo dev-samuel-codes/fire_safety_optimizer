@@ -1188,9 +1188,22 @@ svg {
 .right-panel-body {
   min-height: 0;
   overflow-y: auto;
+  overflow-x: hidden;               /* 가로 스크롤 방지(세로만 스크롤) */
   display: grid;
+  grid-template-columns: minmax(0, 1fr);  /* 자식이 컬럼 폭을 넘지 않게 shrink 허용 */
   align-content: start;
   gap: var(--app-gap);
+}
+
+/* 우측 패널 내부 모든 요소가 컬럼 폭 안에서 줄바꿈되도록(가로 오버플로 차단) */
+.right-panel-body,
+.right-panel-body * {
+  min-width: 0;
+}
+
+.right-panel-body .analysis-panel {
+  overflow-wrap: break-word;
+  word-break: break-word;
 }
 
 .view-tabs {

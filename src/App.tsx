@@ -786,7 +786,7 @@ export function App() {
                 {recognition.legendTypes.length > 0 ? (
                   <div style={{ fontSize: 11, opacity: 0.72, marginBottom: 6 }}>범례 종류(힌트): {recognition.legendTypes.slice(0, 6).join(", ")}</div>
                 ) : null}
-                <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 300, overflowY: "auto" }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 300, overflowY: "auto", overflowX: "hidden" }}>
                   {recognition.classes.map((c) => (
                     <div key={c.classId} style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 7px", borderRadius: 6,
                       background: c.needsHitl ? "rgba(210,160,60,0.10)" : "rgba(90,192,138,0.08)",
@@ -924,7 +924,7 @@ export function App() {
                   <span style={{ color: "#d9b060" }}>대기 {pending}</span>
                   <span style={{ color: "#c88" }}>제외 {excluded}</span>
                 </div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 4, maxHeight: 320, overflowY: "auto" }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: 4, maxHeight: 320, overflowY: "auto", overflowX: "hidden" }}>
                   {viols.map((v, i) => {
                     const k = keyOf(v, i);
                     const nb = isNB(v);
@@ -963,7 +963,7 @@ export function App() {
                             {areaOk ? `면적 ${manualAreas[k]}㎡ 입력됨 — 판정은 감지기 인식 후(경계 미확정)` : "벽이 안 닫힘(문틈/병합) — 면적 직접 입력하거나 제외"}
                           </div>
                         )}
-                        <div style={{ display: "flex", gap: 6, marginTop: 5, alignItems: "center" }}>
+                        <div style={{ display: "flex", gap: 6, marginTop: 5, alignItems: "center", flexWrap: "wrap" }}>
                           {!nb ? (
                             <button onClick={() => setDecision(k, "confirmed")} style={btn(confirmed, "#8d8", "rgba(90,192,138,0.25)")}>
                               {confirmed ? "✓ 면적 확인됨" : "면적 확인"}
