@@ -17,11 +17,14 @@ from __future__ import annotations
 import os
 import shutil
 
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_from_directory
 
 from ..schema.rules import RULE_CATALOG
 
 app = Flask(__name__)
+
+# 배포(Docker/HF Spaces)에서만 설정 — 로컬 개발(:5173 + Vite 프록시)은 건드리지 않음.
+_STATIC_DIR = os.environ.get("STATIC_DIR")
 
 
 @app.after_request
@@ -388,10 +391,26 @@ def analyze():
     })
 
 
+if _STATIC_DIR:
+    @app.route("/", defaults={"path": ""})
+    @app.route("/<path:path>")
+    def serve_frontend(path):
+        """빌드된 React 정적 파일 서빙(SPA) — Docker/HF Spaces 배포용.
+
+        /api/*는 위쪽 라우트가 먼저 매치되므로 이 catch-all과 겹치지 않음.
+        """
+        target = os.path.join(_STATIC_DIR, path) if path else ""
+        if path and os.path.isfile(target):
+            return send_from_directory(_STATIC_DIR, path)
+        return send_from_directory(_STATIC_DIR, "index.html")
+
+
 def main():
     host = os.environ.get("HOST", "127.0.0.1")
     port = int(os.environ.get("PORT", "8900"))
     print(f"FireVal API → http://{host}:{port}/api/health")
+    if _STATIC_DIR:
+        print(f"정적 프론트 서빙 → {_STATIC_DIR}")
     app.run(host=host, port=port, debug=False)
 
 

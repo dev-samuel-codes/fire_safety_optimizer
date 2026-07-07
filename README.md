@@ -1,3 +1,13 @@
+---
+title: FireOpt
+emoji: 🚒
+colorFrom: red
+colorTo: yellow
+sdk: docker
+app_port: 7860
+pinned: false
+---
+
 # FireOpt — 소방 설계 자동 검토
 
 건축/소방 도면(DWG·DXF)을 올리면 한국 화재안전기술기준(**NFTC**) 관점에서 소방 설비를
