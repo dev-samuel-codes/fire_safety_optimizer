@@ -220,9 +220,10 @@ export function App() {
     setLabels({});
     setAiResult(null);
     setAnalysis({ drawingInfo: null, roomJudgments: [], violations: [] });   // 이전 파일 결과 잔류 방지
-    setToast(`${file.name} 분석 중… (도면 정보 추출)`);
+    setToast(`${file.name} 분석 중… (도면 정보 + 방·심볼 추출)`);
     runAnalysis(file, structure, occupancy, mount);
     runRecognize(file);        // 소방 심볼 인식 매니페스트(HITL 명명용)
+    runAiRooms(file);          // 기하 방추출 자동 실행(심볼처럼 바로 — flood-fill 대체)
   };
 
   // 사용자가 지정한 종류(labels)로 인식 M 기반 실판정
@@ -233,39 +234,41 @@ export function App() {
     }
   };
 
-  // AI 방찾기(SAM): 방 레이어 없는 실무 도면에서 방 경계를 AI로 추출 + 감지기 배정 + 판정. 느림.
-  const runAiRooms = () => {
-    if (!uploadedFile) {
+  // AI 방찾기(기하): 방 레이어 없는 실무 도면에서 벽으로 방 경계·면적 추출 + (라벨 있으면)감지기 판정.
+  // fileArg=업로드 직후 자동실행용(state 반영 전 stale 방지). seq(aiSeqRef)만으로 레이스 가드.
+  const runAiRooms = (fileArg?: File, judge = false, sOv?: string, oOv?: string, mOv?: string) => {
+    const file = fileArg ?? uploadedFile;
+    if (!file) {
       return;
     }
-    const seq = ++aiSeqRef.current;   // 이 요청 순번 — 더 최신 요청/새 업로드면 결과 폐기
-    const forFile = uploadedFile;
+    const s = sOv ?? structure, o = oOv ?? occupancy, m = mOv ?? mount;   // 조건 override(selector 변경 시 fresh 값)
+    const seq = ++aiSeqRef.current;   // 더 최신 요청/새 업로드면 이 결과 폐기(seq-only 가드)
     setAiResult({ loading: true });
-    setRoomDecisions({}); setManualAreas({});   // 새 실행 → 이전 확인/제외·수동면적 초기화
-    setToast("AI로 방을 찾는 중… (모델 추론, 최대 1분 소요)");
+    if (!judge) { setRoomDecisions({}); setManualAreas({}); }   // 판정 재실행은 확인/제외 유지
+    setToast(judge ? "라벨한 심볼로 불법/합법 판정 중…" : "벽으로 방을 추출 중… (기하)");
     const form = new FormData();
-    form.append("file", uploadedFile);
-    if (structure) form.append("structure", structure);
-    if (occupancy) form.append("occupancy", occupancy);
-    if (mount) form.append("mount", mount);
+    form.append("file", file);
+    if (s) form.append("structure", s);
+    if (o) form.append("occupancy", o);
+    if (m) form.append("mount", m);
     if (Object.keys(labels).length > 0) {
-      form.append("labels", JSON.stringify(labels));   // 사용자 라벨한 연기/열 감지기로 정확 판정
+      form.append("labels", JSON.stringify(labels));   // 라벨한 연기/열 감지기로 배치 판정(불법/합법)
     }
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 120000);
     fetch("/api/rooms_ai", { method: "POST", body: form, signal: controller.signal })
       .then((res) => res.json())
       .then((d) => {
-        if (seq !== aiSeqRef.current || forFile !== uploadedFile) return;   // 새 요청/새 파일 → 폐기(레이스 방지)
+        if (seq !== aiSeqRef.current) return;   // 더 최신 요청 진행 중 → 폐기(레이스 방지)
         setAiResult({ rooms: d.aiRooms ?? [], violations: d.violations ?? [],
                       note: d.note, available: d.available, loading: false });
-        setToast(d.available === false ? "AI 방찾기 미설치 환경입니다"
-                 : `AI 방찾기 완료 — 방 ${(d.aiRooms ?? []).length}개`);
+        setToast(d.available === false ? "기하 방추출 미설치 환경입니다"
+                 : `방 ${(d.aiRooms ?? []).length}개 추출${judge ? " · 판정 완료" : ""}`);
       })
       .catch((err) => {
-        if (seq !== aiSeqRef.current || forFile !== uploadedFile) return;
+        if (seq !== aiSeqRef.current) return;
         setAiResult({ rooms: [], violations: [], loading: false });
-        setToast(err?.name === "AbortError" ? "AI 방찾기 시간 초과(1분)" : "AI 방찾기 실패");
+        setToast(err?.name === "AbortError" ? "시간 초과(1분)" : "방 추출 실패");
       })
       .finally(() => clearTimeout(timer));
   };
@@ -285,33 +288,33 @@ export function App() {
 
   // 구조/용도/층고 변경 → 재판정. HITL 라벨이 있으면 유지(인식 M 판정을 자동으로 되돌리지 않음).
   const labelsOrUndef = Object.keys(labels).length > 0 ? labels : undefined;
-  // 안전 임계 입력이 바뀌면 기존 AI 방판정은 무효(옛 구조/층고로 계산됨) → 리셋(사용자 재실행).
-  const invalidateAi = () => { aiSeqRef.current++; setAiResult(null); setRoomDecisions({}); setManualAreas({}); };
+  // 조건 변경 시 AI 방은 지우지 않고 **새 조건으로 재추출·재판정**(확인/제외 유지). 방 자체는 조건 무관이나
+  // 판정(감지면적)은 조건 의존 → fresh 값으로 다시 돈다. runAiRooms가 seq로 in-flight 정리.
 
   // 건물 구조 변경 → 재판정(구조는 열감지기 기준면적에 영향 = 안전 임계 입력)
   const handleStructureChange = (value: string) => {
     setStructure(value);
-    invalidateAi();
     if (uploadedFile) {
       runAnalysis(uploadedFile, value, occupancy, mount, labelsOrUndef);
+      runAiRooms(uploadedFile, true, value, occupancy, mount);
     }
   };
 
   // 용도 변경 → 재판정(취침거실 연기의무·스프링클러 반경 등에 영향)
   const handleOccupancyChange = (value: string) => {
     setOccupancy(value);
-    invalidateAi();
     if (uploadedFile) {
       runAnalysis(uploadedFile, structure, value, mount, labelsOrUndef);
+      runAiRooms(uploadedFile, true, structure, value, mount);
     }
   };
 
   // 부착높이(층고) 변경 → 재판정(4m 경계로 감지면적이 갈림 = 안전 임계 입력)
   const handleMountChange = (value: string) => {
     setMount(value);
-    invalidateAi();
     if (uploadedFile) {
       runAnalysis(uploadedFile, structure, occupancy, value, labelsOrUndef);
+      runAiRooms(uploadedFile, true, structure, occupancy, value);
     }
   };
 
@@ -617,7 +620,7 @@ export function App() {
             {analysis.drawingInfo && !analysis.drawingInfo.error ? (
               <div style={{ marginBottom: 12 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "4px 0 8px" }}>
-                  <span style={{ fontSize: 12.5, fontWeight: 600 }}>방별 판정</span>
+                  <span style={{ fontSize: 12.5, fontWeight: 600 }}>판정 조건</span>
                   <select
                     value={structure}
                     onChange={(event) => handleStructureChange(event.target.value)}
@@ -650,34 +653,13 @@ export function App() {
                     <option value="ge4">천장 4m 이상</option>
                   </select>
                 </div>
-                {(analysis.roomJudgments ?? []).length === 0 ? (
-                  <p style={{ fontSize: 11.5, opacity: 0.6 }}>추출된 방 판정 없음(벽 레이어 인식 한계 가능).</p>
+                {aiResult?.loading ? (
+                  <p style={{ fontSize: 11.5, opacity: 0.65 }}>벽으로 방을 추출 중…(기하)</p>
                 ) : (
-                  <div style={{ display: "flex", flexDirection: "column", gap: 5, maxHeight: 260, overflowY: "auto" }}>
-                    {(analysis.roomJudgments ?? []).map((j, i) => (
-                      <div key={`${j.room}-${i}`} style={{ fontSize: 11.5, lineHeight: 1.45, padding: "6px 8px", borderRadius: 6,
-                        background: j.status === "determined" ? "rgba(210,160,60,0.13)" : "rgba(120,140,170,0.1)",
-                        borderLeft: `3px solid ${j.status === "determined" ? "#d2a03c" : "#8fa4c8"}` }}>
-                        <b>{j.room || "—"}</b>{j.area_m2 ? ` · ${j.area_m2}㎡` : ""}
-                        {j.status === "determined" ? <span style={{ opacity: 0.65 }}> · 요구</span> : null}
-                        {j.status === "needs_review" ? <span style={{ opacity: 0.65 }}> · 확인 필요</span> : null}
-                        <div style={{ opacity: 0.85, marginTop: 2 }}>{j.detail || j.reason}</div>
-                      </div>
-                    ))}
-                  </div>
+                  <p style={{ fontSize: 11, opacity: 0.6, lineHeight: 1.55 }}>
+                    업로드 시 벽으로 방을 자동 추출합니다(아래). 조건을 정하고 심볼 종류를 라벨한 뒤 <b>불법/합법 판정</b>을 누르세요.
+                  </p>
                 )}
-              </div>
-            ) : null}
-            {analysis.drawingInfo && !analysis.drawingInfo.error && (analysis.violations ?? []).length === 0 ? (
-              <div style={{ marginBottom: 12 }}>
-                <button onClick={runAiRooms} disabled={aiResult?.loading}
-                  style={{ width: "100%", fontSize: 12.5, padding: "9px", borderRadius: 8, cursor: aiResult?.loading ? "wait" : "pointer",
-                    background: "rgba(120,90,200,0.25)", color: "#cbb8f0", border: "1px solid rgba(150,120,220,0.45)", fontWeight: 600 }}>
-                  {aiResult?.loading ? "🤖 방 찾는 중…" : "🤖 AI로 방 찾기 (실험)"}
-                </button>
-                <p style={{ fontSize: 10.5, opacity: 0.55, margin: "5px 0 0", lineHeight: 1.5 }}>
-                  방 레이어 없는 실무 도면에서 벽으로 방 면적을 추출(기하)해 판정합니다. 벽 안 닫힌 방은 <b>경계 확인 필요</b> — 모든 방 사람 확인 후 최종.
-                </p>
               </div>
             ) : null}
             {aiResult && !aiResult.loading && (aiResult.rooms ?? []).length > 0 ? (
@@ -722,6 +704,18 @@ export function App() {
                   background: "rgba(210,160,60,0.10)", color: "#d9b060", border: "1px solid rgba(210,160,60,0.25)" }}>
                   ⚠ <b>모든 방은 사람 확인 후 최종</b> — 자동 최종판정 없음. 기하 면적도 오차 가능(확인 대상), 경계 미확정 방은 면적 직접 입력.
                 </div>
+                <button onClick={() => runAiRooms(undefined, true)} disabled={aiResult?.loading}
+                  style={{ width: "100%", fontSize: 12.5, fontWeight: 700, padding: "9px", borderRadius: 8, margin: "0 0 5px",
+                    cursor: aiResult?.loading ? "wait" : "pointer",
+                    background: "linear-gradient(90deg, rgba(90,120,180,0.38), rgba(120,90,200,0.34))",
+                    color: "#dce7f8", border: "1px solid rgba(130,160,210,0.5)" }}>
+                  {aiResult?.loading ? "판정 중…" : "🔍 불법 / 합법 판정하기"}
+                </button>
+                <p style={{ fontSize: 10, opacity: 0.55, margin: "0 0 7px", lineHeight: 1.5 }}>
+                  {Object.keys(labels).length > 0
+                    ? "라벨한 심볼 + 조건(구조·용도·층고)으로 방별 위반/적합을 산정합니다."
+                    : "위 심볼 패널에서 종류를 라벨하면 위반/적합 판정, 없으면 요구 개수만 산정됩니다."}
+                </p>
                 <div style={{ fontSize: 11, margin: "0 0 6px", display: "flex", gap: 10 }}>
                   <span style={{ color: "#8d8" }}>확정 {resolved}</span>
                   <span style={{ color: "#d9b060" }}>대기 {pending}</span>
