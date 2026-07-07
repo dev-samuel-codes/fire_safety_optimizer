@@ -120,6 +120,8 @@ export function App() {
   const [roomDecisions, setRoomDecisions] = useState<Record<string, "confirmed" | "excluded">>({});
   // needs_boundary(벽 안 닫힌) 방: 사람이 면적을 직접 입력해 해소. 안전정책상 어떤 방도 자동 최종 아님.
   const [manualAreas, setManualAreas] = useState<Record<string, string>>({});
+  // 경계 미확정 방의 설치 감지기 개수(사람 입력). 면적+개수 → 백엔드가 필요개수 대비 위반/적합 판정.
+  const [manualCounts, setManualCounts] = useState<Record<string, string>>({});
   // 요청 시퀀스 가드: 연속 업로드/파라미터 변경 시 이전 in-flight 응답이 최신 상태를 덮어쓰지 않게.
   const analyzeSeqRef = useRef(0);
   const recognizeSeqRef = useRef(0);
@@ -278,7 +280,7 @@ export function App() {
     const s = sOv ?? structure, o = oOv ?? occupancy, m = mOv ?? mount;   // 조건 override(selector 변경 시 fresh 값)
     const seq = ++aiSeqRef.current;   // 더 최신 요청/새 업로드면 이 결과 폐기(seq-only 가드)
     setAiResult({ loading: true });
-    if (!judge) { setRoomDecisions({}); setManualAreas({}); }   // 판정 재실행은 확인/제외 유지
+    if (!judge) { setRoomDecisions({}); setManualAreas({}); setManualCounts({}); }   // 판정 재실행은 확인/제외·수동입력 유지
     setToast(judge ? "라벨한 심볼로 불법/합법 판정 중…" : "벽으로 방을 추출 중… (기하)");
     const form = new FormData();
     form.append("file", file);
@@ -287,6 +289,21 @@ export function App() {
     if (m) form.append("mount", m);
     if (Object.keys(labels).length > 0) {
       form.append("labels", JSON.stringify(labels));   // 라벨한 연기/열 감지기로 배치 판정(불법/합법)
+    }
+    // 경계 미확정 방에 사람이 입력한 (면적, 설치 개수) → 백엔드가 필요개수 대비 위반/적합 판정.
+    // center로 매칭(백엔드가 재추출해도 안정). 판정 시에만 전송.
+    if (judge) {
+      const cur = aiResult?.violations ?? [];
+      const manual = cur.flatMap((v, i) => {
+        if (v.ruleId !== "FV-DET-need_boundary" || !Array.isArray(v.center)) return [];
+        const k = `${v.roomName || "room"}#${i}`;
+        const a = parseFloat(manualAreas[k]);
+        if (!(isFinite(a) && a > 0)) return [];
+        const cRaw = manualCounts[k];
+        const c = cRaw !== undefined && cRaw !== "" ? parseInt(cRaw, 10) : null;
+        return [{ center: v.center, area: a, placed: Number.isFinite(c as number) ? c : null }];
+      });
+      if (manual.length > 0) form.append("manual", JSON.stringify(manual));
     }
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 120000);
@@ -883,15 +900,20 @@ export function App() {
                     return next;
                   });
                 const setArea = (k: string, val: string) => setManualAreas((prev) => ({ ...prev, [k]: val }));
-                // NB(경계 미확정) 방은 백엔드 재판정이 없어 '확정'으로 세지 않음(6축 [2/6] false-resolution 방지).
-                // 확정 = 확인된 기하 방만. NB·미확인은 대기(판정 미완료).
+                const setCount = (k: string, val: string) => setManualCounts((prev) => ({ ...prev, [k]: val }));
+                // 확정 = 확인된 기하 방 + 면적 입력한 경계방(수동면적으로 판정까지 연결). 나머지=대기.
                 let resolved = 0, excluded = 0, pending = 0;
                 viols.forEach((v, i) => {
                   const k = keyOf(v, i);
                   if (roomDecisions[k] === "excluded") { excluded++; return; }
-                  if (!isNB(v) && roomDecisions[k] === "confirmed") resolved++; else pending++;
+                  const nbResolved = isNB(v) && validArea(k);   // 수동 면적 입력한 경계방 = 확인됨
+                  if ((!isNB(v) && roomDecisions[k] === "confirmed") || nbResolved) resolved++; else pending++;
                 });
-                const nViol = viols.filter((v, i) => !isNB(v) && roomDecisions[keyOf(v, i)] === "confirmed" && v.status === "violation").length;
+                const nViol = viols.filter((v, i) => {
+                  if (v.status !== "violation") return false;
+                  const k = keyOf(v, i);
+                  return isNB(v) ? validArea(k) : roomDecisions[k] === "confirmed";   // 경계방은 수동면적 입력 시 위반 집계
+                }).length;
                 const judged = viols.some((v) => v.status === "violation" || v.status === "compliant");   // 실제 pass/fail 존재?(라벨 판정)
                 const btn = (active: boolean, on: string, off: string) => ({
                   fontSize: 10.5, padding: "2px 9px", borderRadius: 5, cursor: "pointer",
@@ -905,7 +927,7 @@ export function App() {
                 </div>
                 <div style={{ fontSize: 10.5, lineHeight: 1.5, margin: "0 0 7px", padding: "6px 9px", borderRadius: 6,
                   background: "rgba(210,160,60,0.10)", color: "#d9b060", border: "1px solid rgba(210,160,60,0.25)" }}>
-                  ⚠ <b>모든 방은 사람 확인 후 최종</b> — 자동 최종판정 없음. 기하 면적도 오차 가능(확인 대상), 경계 미확정 방은 면적 직접 입력.
+                  ⚠ <b>모든 방은 사람 확인 후 최종</b> — 자동 최종판정 없음. 기하 면적도 오차 가능(확인 대상). 경계 미확정 방은 <b>면적 + 설치 감지기 개수</b>를 직접 입력 후 ‘판정하기’를 누르면 위반/적합이 나옵니다.
                 </div>
                 <button onClick={() => runAiRooms(undefined, true)} disabled={aiResult?.loading}
                   style={{ width: "100%", fontSize: 12.5, fontWeight: 700, padding: "9px", borderRadius: 8, margin: "0 0 5px",
@@ -959,8 +981,13 @@ export function App() {
                             <span style={{ opacity: 0.7 }}> · {v.description}</span>
                           </div>
                         ) : (
-                          <div style={{ marginTop: 3, opacity: 0.8 }}>
-                            {areaOk ? `면적 ${manualAreas[k]}㎡ 입력됨 — 판정은 감지기 인식 후(경계 미확정)` : "벽이 안 닫힘(문틈/병합) — 면적 직접 입력하거나 제외"}
+                          <div style={{ marginTop: 3 }}>
+                            <span style={{ color: v.status === "violation" ? "#e88" : v.status === "compliant" ? "#8d8" : "#d9b060", opacity: 0.92 }}>
+                              {v.description}
+                            </span>
+                            {areaOk && v.status !== "violation" && v.status !== "compliant" ? (
+                              <span style={{ opacity: 0.55, marginLeft: 4 }}>· ‘불법/합법 판정하기’ 다시 눌러 반영</span>
+                            ) : null}
                           </div>
                         )}
                         <div style={{ display: "flex", gap: 6, marginTop: 5, alignItems: "center", flexWrap: "wrap" }}>
@@ -969,12 +996,17 @@ export function App() {
                               {confirmed ? "✓ 면적 확인됨" : "면적 확인"}
                             </button>
                           ) : (
-                            <span style={{ display: "flex", alignItems: "center", gap: 3 }}>
+                            <span style={{ display: "flex", alignItems: "center", gap: 3, flexWrap: "wrap" }}>
                               <input type="number" min="0" value={manualAreas[k] ?? ""} onChange={(e) => setArea(k, e.target.value)}
-                                placeholder="면적" style={{ width: 54, fontSize: 10.5, padding: "2px 5px", borderRadius: 4,
+                                placeholder="면적" style={{ width: 46, fontSize: 10.5, padding: "2px 5px", borderRadius: 4,
                                   border: `1px solid ${areaOk ? "#5ac08a" : "rgba(150,150,160,0.4)"}`,
                                   background: "rgba(255,255,255,0.06)", color: "#cde" }} />
-                              <span style={{ fontSize: 10.5, color: areaOk ? "#8d8" : "#9aa6ba" }}>㎡{areaOk ? " ✓ 입력됨" : ""}</span>
+                              <span style={{ fontSize: 10.5, color: areaOk ? "#8d8" : "#9aa6ba" }}>㎡</span>
+                              <input type="number" min="0" value={manualCounts[k] ?? ""} onChange={(e) => setCount(k, e.target.value)}
+                                placeholder="개수" style={{ width: 46, fontSize: 10.5, padding: "2px 5px", borderRadius: 4,
+                                  border: "1px solid rgba(150,150,160,0.4)",
+                                  background: "rgba(255,255,255,0.06)", color: "#cde" }} />
+                              <span style={{ fontSize: 10.5, opacity: 0.7 }}>개 감지기</span>
                             </span>
                           )}
                           <button onClick={() => setDecision(k, "excluded")} style={btn(excludedR, "#e0a0a0", "rgba(200,110,110,0.22)")}>

@@ -288,7 +288,7 @@ def _ai_rooms(dxf_path):
             pass
 
 
-def _real_violations_ai(dxf_path, structure, occupancy, mount_height, labels=None):
+def _real_violations_ai(dxf_path, structure, occupancy, mount_height, labels=None, manual=None):
     """방 면적 = **기하 face-extraction**(room_geom: 벽 평면그래프 닫힌 면 + leak-guard + 안전마진).
 
     근거(2026-07-06 blind GT): SAM 면적은 실제의 2~7배 과대(부적합)라 폐기 → 면적은 기하가 담당.
@@ -303,12 +303,75 @@ def _real_violations_ai(dxf_path, structure, occupancy, mount_height, labels=Non
     geo = [r for r in rooms if r["status"] == "geometry" and r.get("polygon")]
     nb = [r for r in rooms if r["status"] != "geometry"]
 
+    # 경계 미확정 방에 사용자가 직접 넣은 (면적, 설치 감지기 개수) — 기하 폴리곤이 없어 자동 배정
+    # 불가한 방을 사람 입력으로 판정까지 연결(HITL). center 근접 매칭(부동소수 안전).
+    def _manual_for(rm):
+        c = rm.get("center")
+        if not manual or not isinstance(c, (list, tuple)) or len(c) < 2:
+            return None
+        best, best_d = None, 1.0   # 원 단위(raw DXF) 허용오차
+        for m in manual:
+            mc = m.get("center")
+            if isinstance(mc, (list, tuple)) and len(mc) >= 2:
+                d = abs(mc[0] - c[0]) + abs(mc[1] - c[1])
+                if d < best_d:
+                    best, best_d = m, d
+        return best
+
+    _struct = structure if structure in ("fireproof", "noncombustible", "other") else "fireproof"
+    _height = mount_height if mount_height is not None else 3.0
+
     def _nb_viols():
-        # 경계 미확정 방(문틈/병합으로 면 안 닫힘) = 자동 면적판정 불가 → 확인 필요(정직, 자동신뢰 X).
-        return [{"ruleId": "FV-DET-need_boundary", "status": "not_applicable", "severity": "",
-                 "description": f"{rm['name']}: 벽이 안 닫혀(문틈/병합) 자동 면적 불가 — 경계 확인 필요",
-                 "measured": None, "required": None, "unit": "",
-                 "roomName": rm["name"], "center": rm.get("center")} for rm in nb]
+        import math as _math
+        from fireopt import constants as _C
+        out = []
+        for rm in nb:
+            m = _manual_for(rm)
+            try:
+                area = float(m.get("area")) if m else None
+            except (TypeError, ValueError):
+                area = None
+            if not area or area <= 0:
+                # 면적 미입력 → 자동 면적판정 불가(정직, 자동신뢰 X).
+                out.append({"ruleId": "FV-DET-need_boundary", "status": "not_applicable", "severity": "",
+                            "description": f"{rm['name']}: 벽이 안 닫혀(문틈/병합) 자동 면적 불가 — 경계 확인 필요",
+                            "measured": None, "required": None, "unit": "",
+                            "roomName": rm["name"], "center": rm.get("center")})
+                continue
+            # 수동 면적 → 요구개수(연기 종별미상: 관대 smoke_12 / 엄격 smoke_3 bounded).
+            try:
+                std_len = _C.detector_area("smoke_12", _height, _struct)   # 최대면적 → 최소 요구
+                std_str = _C.detector_area("smoke_3", _height, _struct)    # 최소면적 → 최대 요구
+                req_min = max(1, _math.ceil(area / std_len))
+                req_max = max(1, _math.ceil(area / std_str))
+            except Exception:
+                out.append({"ruleId": "FV-DET-need_boundary", "status": "not_applicable", "severity": "",
+                            "description": f"{rm['name']}: 면적 {area:.1f}㎡ 입력됨 — 기준 산정 불가(조건 확인)",
+                            "measured": None, "required": None, "unit": "",
+                            "roomName": rm["name"], "center": rm.get("center")})
+                continue
+            try:
+                placed = int(m.get("placed"))
+            except (TypeError, ValueError):
+                placed = None
+            if placed is None:
+                status, desc = "not_applicable", (
+                    f"{rm['name']}: 면적 {area:.1f}㎡(직접입력) → 감지기 {req_min}~{req_max}개 필요"
+                    f"(연기 종별미상 관대~엄격). 설치 개수 입력 시 위반/적합 판정")
+            elif placed >= req_max:
+                status, desc = "compliant", (
+                    f"{rm['name']}: 면적 {area:.1f}㎡, 감지기 {placed}개 ≥ 필요 {req_max}개(엄격기준) → 적합")
+            elif placed < req_min:
+                status, desc = "violation", (
+                    f"{rm['name']}: 면적 {area:.1f}㎡, 감지기 {placed}개 < 필요 {req_min}개(관대기준) → 위반")
+            else:
+                status, desc = "not_applicable", (
+                    f"{rm['name']}: 면적 {area:.1f}㎡, 감지기 {placed}개 — 필요 {req_min}~{req_max}개 구간"
+                    f"(연기 종별 확정 시 판정)")
+            out.append({"ruleId": "FV-DET-need_boundary", "status": status, "severity": "",
+                        "description": desc, "measured": placed, "required": req_max, "unit": "개",
+                        "roomName": rm["name"], "center": rm.get("center")})
+        return out
 
     try:
         import ezdxf
@@ -671,11 +734,22 @@ def rooms_ai():
                 labels = {str(k): str(v) for k, v in parsed.items()}
         except (ValueError, TypeError):
             labels = None
+    # 경계 미확정 방에 사용자가 직접 입력한 면적·설치개수(HITL) → 판정까지 연결.
+    manual = None
+    raw_manual = request.form.get("manual")
+    if raw_manual:
+        try:
+            import json
+            parsed_m = json.loads(raw_manual)
+            if isinstance(parsed_m, list) and parsed_m:
+                manual = [m for m in parsed_m if isinstance(m, dict)]
+        except (ValueError, TypeError):
+            manual = None
     dxf_path, cleanup, err = _to_dxf(request.files["file"])
     try:
         if err:
             return jsonify(err), 200
-        viols, rooms = _real_violations_ai(dxf_path, structure, occupancy, mount_height, labels)
+        viols, rooms = _real_violations_ai(dxf_path, structure, occupancy, mount_height, labels, manual)
         return jsonify({"available": True, "aiRooms": rooms, "violations": viols,
                         "judgmentSource": "geometry",
                         "note": "기하 방추출(벽 닫힌 면 + 안전마진) — 벽이 안 닫힌 방은 '경계 확인 필요'. 확인(HITL) 전제."})
