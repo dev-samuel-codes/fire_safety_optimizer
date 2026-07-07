@@ -18,7 +18,7 @@ RUN git clone --depth 1 https://github.com/LibreDWG/libredwg.git /tmp/libredwg
 WORKDIR /tmp/libredwg
 RUN ./autogen.sh && \
     ./configure --disable-bindings --disable-docs --disable-shared --enable-static && \
-    make -j$(nproc)
+    make -j2
 
 FROM python:3.11-slim
 WORKDIR /app/backend
