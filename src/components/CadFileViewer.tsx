@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
   CadViewer,
   resolveCadColor,
@@ -25,6 +25,13 @@ interface CadFileViewerProps {
     roomNames?: string[];
     source?: "viewer";
   } | null) => void;
+}
+
+// AI 방찾기 → 방 클릭 시 뷰어를 그 방으로 이동시키기 위한 핸들. 월드좌표(원시 DXF)를 받아
+// renderCadDocument와 동일 변환으로 zoom/pan을 계산해 반환(App이 그 값으로 상태 set).
+export interface CadFileViewerHandle {
+  focusOnWorld: (worldX: number, worldY: number, zoomPercent?: number)
+    => { zoomLevel: number; panOffset: { x: number; y: number } } | null;
 }
 
 type LoadState = "idle" | "loading" | "ready" | "error";
@@ -75,7 +82,7 @@ interface RenderScene {
   items: RenderItem[];
 }
 
-export function CadFileViewer({
+export const CadFileViewer = forwardRef<CadFileViewerHandle, CadFileViewerProps>(function CadFileViewer({
   file,
   visibleLayerIds,
   opacity,
@@ -84,7 +91,7 @@ export function CadFileViewer({
   panOffset,
   onStatusChange,
   onDrawingInfoChange,
-}: CadFileViewerProps) {
+}: CadFileViewerProps, ref) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const viewerRef = useRef<CadViewer | null>(null);
   const activeLoadIdRef = useRef(0);
@@ -119,6 +126,34 @@ export function CadFileViewer({
       scale,
     });
   }, []);
+
+  // 월드좌표(원시 DXF) → 그 지점을 화면 중앙에 놓는 zoom/pan 계산(renderCadDocument와 동일 공식).
+  useImperativeHandle(ref, () => ({
+    focusOnWorld(worldX, worldY, zoomPercent = 260) {
+      // renderCadDocument는 canvas.parentElement(=.cad-file-viewer 루트, 미변환)를 측정한다.
+      // containerRef(cad-viewer-host)는 CSS zoom/pan 변환이 걸려 rect가 왜곡되므로 루트를 쓴다.
+      const container = containerRef.current?.parentElement;
+      if (!container || !cadDocument) {
+        return null;
+      }
+      const bounds = computeDenseDocumentBounds(cadDocument);
+      if (!bounds || !isFiniteBounds(bounds)) {
+        return null;
+      }
+      const rect = container.getBoundingClientRect();
+      const width = Math.max(rect.width, 1);
+      const height = Math.max(rect.height, 1);
+      const boundsWidth = Math.max(bounds.maxX - bounds.minX, 1e-9);
+      const boundsHeight = Math.max(bounds.maxY - bounds.minY, 1e-9);
+      const scale = Math.min((width - 80) / boundsWidth, (height - 150) / boundsHeight) * 0.9 * (zoomPercent / 100);
+      const centerX = (bounds.minX + bounds.maxX) / 2;
+      const centerY = (bounds.minY + bounds.maxY) / 2;
+      return {
+        zoomLevel: zoomPercent,
+        panOffset: { x: -(worldX - centerX) * scale, y: (worldY - centerY) * scale },
+      };
+    },
+  }), [cadDocument]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -329,7 +364,7 @@ export function CadFileViewer({
 
     </div>
   );
-}
+});
 
 function DetailedCadDocumentCanvas({
   document,
