@@ -35,11 +35,38 @@ def _cors(resp):
     return resp
 
 
+def _find_in_conda_envs(binary_name):
+    """conda 설치본(libredwg 등)의 바이너리를 자동 탐색. 백엔드가 시스템 python으로 돌아
+    conda env의 PATH를 몰라도 dwg2dxf/dwgread를 찾도록. 머신 종속 하드코딩 대신 일반 위치 glob."""
+    import glob
+    roots = []
+    prefix = os.environ.get("CONDA_PREFIX")
+    if prefix:
+        roots.append(prefix)                       # 현재 활성 env
+        roots.append(os.path.dirname(os.path.dirname(prefix)))  # env이면 conda 루트
+    conda_exe = shutil.which("conda")
+    if conda_exe:
+        roots.append(os.path.dirname(os.path.dirname(conda_exe)))
+    home = os.path.expanduser("~")
+    roots += [os.path.join(home, d) for d in ("miniconda3", "anaconda3", "miniconda", "anaconda")]
+    roots += ["/opt/conda", "/A.I_DATA/jbnu/miniconda3"]
+    seen = set()
+    for root in roots:
+        if not root or root in seen:
+            continue
+        seen.add(root)
+        for cand in (os.path.join(root, "bin", binary_name),
+                     *glob.glob(os.path.join(root, "envs", "*", "bin", binary_name))):
+            if os.path.exists(cand) and os.access(cand, os.X_OK):
+                return cand
+    return None
+
+
 def _resolve_tool(env_name, binary_name):
     configured = os.environ.get(env_name)
     if configured:
         return configured if os.path.exists(configured) else None
-    return shutil.which(binary_name)
+    return shutil.which(binary_name) or _find_in_conda_envs(binary_name)
 
 
 def _resolve_dwg2dxf():
@@ -350,12 +377,13 @@ def _to_dxf(file_storage):
     finally:
         tmp.close()
     if ext == ".dwg":
-        if not _DWG2DXF or not os.path.exists(_DWG2DXF):
+        dwg2dxf = _resolve_dwg2dxf()
+        if not dwg2dxf:
             return None, cleanup, {"error": "서버에 DWG 변환 도구(dwg2dxf)가 없습니다."}
         dxf_path = tmp.name + ".dxf"
         cleanup.append(dxf_path)
         try:
-            r = subprocess.run([_DWG2DXF, "-y", "-o", dxf_path, tmp.name],
+            r = subprocess.run([dwg2dxf, "-y", "-o", dxf_path, tmp.name],
                                capture_output=True, text=True, timeout=60)
         except subprocess.TimeoutExpired:
             return None, cleanup, {"error": "DWG 변환 시간 초과"}
