@@ -747,6 +747,27 @@ export function App() {
           ) : null}
           {uploadedFile && !showReport ? (
             <section className="analysis-panel">
+            {analysisError ? (
+              <div style={{ marginBottom: 14, padding: "10px 12px", borderRadius: 8,
+                background: "rgba(210,150,60,0.12)", border: "1px solid rgba(210,150,60,0.34)" }}>
+                <div style={{ fontSize: 12.5, fontWeight: 600, marginBottom: 6, color: "#e8b871" }}>
+                  ⚠️ 심볼 인식 · 방 추출 · 불법/합법 판정을 쓸 수 없습니다
+                </div>
+                <div style={{ fontSize: 11, lineHeight: 1.65, opacity: 0.9 }}>
+                  {(uploadedFile?.name.split(".").pop()?.toUpperCase() === "DWG") ? (
+                    <>이 도면은 <b>DWG</b>라 브라우저 뷰어는 그리지만, FireVal 엔진(심볼·방·판정)은 <b>DXF</b>가 필요합니다.
+                    이 서버엔 DWG→DXF 변환 도구가 없어 정밀 분석을 못 합니다.<br />
+                    → CAD에서 <b>DXF로 저장(다른 이름으로 저장 → DXF)</b> 후 다시 업로드하면 모든 기능이 동작합니다.</>
+                  ) : (
+                    <>정밀 분석을 못 했습니다: {analysisError}<br />
+                    → DXF 파일이 손상되지 않았는지 확인하거나 다시 내보내 업로드해 주세요.</>
+                  )}
+                </div>
+                <div style={{ fontSize: 10.5, opacity: 0.62, marginTop: 7, lineHeight: 1.5 }}>
+                  위 <b>법규 판정(NFTC)</b> 카드의 값은 브라우저 렌더러가 읽은 <b>레이어·요소 수 참고 정보</b>이며, 실제 법규 판정이 아닙니다.
+                </div>
+              </div>
+            ) : null}
             {recognition && recognition.classes.length > 0 ? (
               <div style={{ marginBottom: 14 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "4px 0 6px" }}>
