@@ -99,6 +99,7 @@ export function App() {
   const effectiveDrawingInfo = getEffectiveDrawingInfo(analysis.drawingInfo ?? null, viewerDrawingInfo);
   const visibleDrawingInfo = analysisPendingMessage ? null : effectiveDrawingInfo;
   const analysisError = analysis.drawingInfo?.error;
+  const analysisErrorCode = analysis.drawingInfo?.errorCode;
   const analysisRecovered = analysis.drawingInfo?.analysisStatus === "recovered";
   const analysisWarnings = analysis.drawingInfo?.analysisWarnings ?? [];
   const statusDrawingInfo = analysisError || analysisPendingMessage ? null : effectiveDrawingInfo;
@@ -771,10 +772,13 @@ export function App() {
                   ⚠️ 심볼 인식 · 방 추출 · 불법/합법 판정을 쓸 수 없습니다
                 </div>
                 <div style={{ fontSize: 11, lineHeight: 1.65, opacity: 0.9 }}>
-                  {(uploadedFile?.name.split(".").pop()?.toUpperCase() === "DWG") ? (
+                  {analysisErrorCode === "dwg2dxf_missing" ? (
                     <>이 도면은 <b>DWG</b>라 브라우저 뷰어는 그리지만, FireVal 엔진(심볼·방·판정)은 <b>DXF</b>가 필요합니다.
                     이 서버엔 DWG→DXF 변환 도구가 없어 정밀 분석을 못 합니다.<br />
                     → CAD에서 <b>DXF로 저장(다른 이름으로 저장 → DXF)</b> 후 다시 업로드하면 모든 기능이 동작합니다.</>
+                  ) : analysisErrorCode === "dwg2dxf_timeout" ? (
+                    <>DWG→DXF 변환이 시간 내에 끝나지 않았습니다(도면이 크거나 복잡할 수 있음): {analysisError}<br />
+                    → CAD에서 <b>DXF로 저장</b> 후 다시 업로드하면 변환 단계 없이 바로 분석됩니다.</>
                   ) : (
                     <>정밀 분석을 못 했습니다: {analysisError}<br />
                     → DXF 파일이 손상되지 않았는지 확인하거나 다시 내보내 업로드해 주세요.</>
