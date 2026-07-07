@@ -37,7 +37,7 @@ export interface CadFileViewerHandle {
 type LoadState = "idle" | "loading" | "ready" | "error";
 
 const cadWasmBase = "/wasm/";
-const renderFailureTimeoutMs = 15_000;
+const renderFailureTimeoutMs = 120_000;
 const maximumCanvasPixelRatio = 6;
 const maximumCanvasBackingStorePixels = 48_000_000;
 const minimumZoomResolutionFactor = 0.25;
@@ -230,7 +230,7 @@ export const CadFileViewer = forwardRef<CadFileViewerHandle, CadFileViewerProps>
       onStatusChange(`도면 렌더링 실패: ${message}`);
     };
     const timeoutId = window.setTimeout(() => {
-      failRendering(`${file.name} 렌더링이 15초 안에 완료되지 않았습니다.`);
+      failRendering(`${file.name} 렌더링이 ${renderFailureTimeoutMs / 1000}초 안에 완료되지 않았습니다.`);
     }, renderFailureTimeoutMs);
 
     const loadCadFile = async () => {
