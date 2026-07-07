@@ -133,7 +133,7 @@ export function App() {
     const requestId = analysisRequestIdRef.current + 1;
     analysisRequestIdRef.current = requestId;
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 30000);
+    const timer = setTimeout(() => controller.abort(), 90000);
     const options: RequestInit = { method: "POST", signal: controller.signal };
     setAnalysisPendingMessage(file ? `${file.name} 분석 중… (도면 정보 추출)` : null);
     if (file) {
@@ -180,7 +180,7 @@ export function App() {
           return;
         }
         const message = err?.name === "AbortError"
-          ? "도면 분석 시간 초과 (30초) — 백엔드 상태를 확인해주세요"
+          ? "도면 분석 시간 초과 (90초) — 백엔드 상태를 확인해주세요"
           : "백엔드 연결 실패 — 서버 상태를 확인해주세요";
         setAnalysisPendingMessage(null);
         if (file) {
