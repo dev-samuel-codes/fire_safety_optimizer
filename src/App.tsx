@@ -644,21 +644,22 @@ export function App() {
 
         <aside className="right-panel">
           {uploadedFile ? (
-            <div style={{ display: "flex", gap: 6, margin: "0 0 10px" }}>
+            <div className="view-tabs">
               <button onClick={() => setShowReport(false)}
-                style={{ flex: 1, fontSize: 12, fontWeight: 600, padding: "7px", borderRadius: 7, cursor: "pointer",
+                style={{ cursor: "pointer",
                   border: `1px solid ${!showReport ? "rgba(130,160,210,0.6)" : "rgba(120,130,150,0.3)"}`,
                   background: !showReport ? "rgba(90,120,180,0.3)" : "transparent", color: !showReport ? "#dce7f8" : "#9aa6ba" }}>
                 🔍 분석 · 판정
               </button>
               <button onClick={() => setShowReport(true)} disabled={!shouldShowReport}
-                style={{ flex: 1, fontSize: 12, fontWeight: 600, padding: "7px", borderRadius: 7, cursor: shouldShowReport ? "pointer" : "not-allowed",
+                style={{ cursor: shouldShowReport ? "pointer" : "not-allowed",
                   border: `1px solid ${showReport ? "rgba(130,160,210,0.6)" : "rgba(120,130,150,0.3)"}`,
                   background: showReport ? "rgba(90,120,180,0.3)" : "transparent", color: showReport ? "#dce7f8" : "#9aa6ba", opacity: shouldShowReport ? 1 : 0.5 }}>
                 📄 보고서
               </button>
             </div>
           ) : null}
+          <div className="right-panel-body">
           {!showReport ? (
             <section className="analysis-panel fit-panel">
               <div className="list-header">
@@ -994,6 +995,7 @@ export function App() {
               analysisRecovered={analysisRecovered}
             />
           ) : null}
+          </div>
         </aside>
       </div>
 
