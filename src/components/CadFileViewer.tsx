@@ -35,6 +35,10 @@ const maximumCanvasPixelRatio = 6;
 const maximumCanvasBackingStorePixels = 48_000_000;
 const minimumZoomResolutionFactor = 0.25;
 const maximumZoomOutResolutionBoost = 2;
+const minimumRenderableSymbolPx = 1.2;
+const maximumZoomOutSymbolCullBoostPx = 4.8;
+const minimumRenderableTextPx = 3;
+const maximumZoomOutTextCullBoostPx = 5;
 const viewportCullingPaddingPx = 96;
 const cadColorOptions = {
   background: "#07111d",
@@ -55,7 +59,7 @@ interface Transform2D {
 interface RenderDetailStyle {
   minStrokeWidth: number;
   maxStrokeWidth: number;
-  minCurveRadius: number;
+  minSymbolSize: number;
   pointRadius: number;
   textMinSize: number;
 }
@@ -572,9 +576,9 @@ function getRenderDetailStyle(zoomLevel: number, resolutionBaselineZoomLevel: nu
   return {
     minStrokeWidth: 0.55 + detailBoost * 0.35,
     maxStrokeWidth: 1.8 + detailBoost * 0.4,
-    minCurveRadius: 0.45 + detailBoost * 0.3,
+    minSymbolSize: minimumRenderableSymbolPx + detailBoost * maximumZoomOutSymbolCullBoostPx,
     pointRadius: 1.8 + detailBoost * 0.7,
-    textMinSize: 3 - detailBoost * 0.5,
+    textMinSize: minimumRenderableTextPx + detailBoost * maximumZoomOutTextCullBoostPx,
   };
 }
 
@@ -661,7 +665,7 @@ function drawEntity(
       drawArc(context, entity, transform, screen, scale, detailStyle);
       return;
     case "ellipse":
-      drawEllipseApproximation(context, entity, transform, screen);
+      drawEllipseApproximation(context, entity, transform, screen, scale, detailStyle);
       return;
     case "solid":
     case "hatch":
@@ -699,7 +703,7 @@ function drawCircleLike(
 
   const center = screen(applyTransform(transform, entity.center));
   const radius = Math.abs(Number(entity.radius) * scale * transformScale(transform));
-  if (radius < detailStyle.minCurveRadius) {
+  if (radius < detailStyle.minSymbolSize) {
     return;
   }
 
@@ -722,7 +726,7 @@ function drawArc(
 
   const center = screen(applyTransform(transform, entity.center));
   const radius = Math.abs(Number(entity.radius) * scale * transformScale(transform));
-  if (radius < detailStyle.minCurveRadius) {
+  if (radius < detailStyle.minSymbolSize) {
     return;
   }
 
@@ -736,6 +740,8 @@ function drawEllipseApproximation(
   entity: CadEntity,
   transform: Transform2D,
   screen: (point: CadPoint2D) => CadPoint2D,
+  scale: number,
+  detailStyle: RenderDetailStyle,
 ) {
   if (!entity.center || !entity.majorAxisEndPoint) {
     return;
@@ -745,6 +751,12 @@ function drawEllipseApproximation(
   const center = entity.center;
   const major = entity.majorAxisEndPoint;
   const majorLength = Math.hypot(major.x, major.y);
+  const minorLength = majorLength * Math.abs(ratio);
+  const screenSize = Math.max(majorLength, minorLength) * scale * transformScale(transform);
+  if (screenSize < detailStyle.minSymbolSize) {
+    return;
+  }
+
   const rotation = Math.atan2(major.y, major.x);
   const points: CadPoint3D[] = [];
   for (let index = 0; index <= 56; index += 1) {
@@ -875,6 +887,10 @@ function drawPointEntity(
   }
 
   const screenPoint = screen(applyTransform(transform, point));
+  if (detailStyle.pointRadius < detailStyle.minSymbolSize) {
+    return;
+  }
+
   context.beginPath();
   context.arc(screenPoint.x, screenPoint.y, detailStyle.pointRadius, 0, Math.PI * 2);
   context.stroke();
