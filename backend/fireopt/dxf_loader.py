@@ -31,7 +31,9 @@ from .ifc_loader import Room, BuildingModel   # 동일 자료구조 재사용
 _INSUNITS_SCALE = {1: 0.0254, 2: 0.3048, 4: 0.001, 5: 0.01, 6: 1.0, 8: 2.54e-5}
 
 # 레이어 이름 분류 키워드(대소문자·한/영 혼용 도면 대응)
-_ROOM_KEYS = ("실구획", "실", "room", "space", "area", "면적", "거실", "zone")
+# 짧고 모호한 '실'(→'실선'·'실외기' 등 비방 레이어 부분일치)·'area'·'면적'(→'면적표') 제외.
+# 이게 room_layer_hits를 결정(없으면 '모든 닫힌 폴리라인' 폴백=신뢰불가)하므로 오탐 배제가 중요.
+_ROOM_KEYS = ("실구획", "실명", "room", "space", "거실", "zone")
 _WALL_KEYS = ("벽", "wall", "a-wall", "a-벽", "구조", "외벽", "내벽")
 _DOOR_KEYS = ("문", "door", "a-door", "창호")
 _TEXT_TYPES = ("TEXT", "MTEXT")

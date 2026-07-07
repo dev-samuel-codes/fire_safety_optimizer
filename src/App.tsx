@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type PointerEvent } from "react";
-import { CadFileViewer } from "./components/CadFileViewer";
+import { CadFileViewer, type CadFileViewerHandle } from "./components/CadFileViewer";
 import type { LayerId } from "./types";
 
 // CAD 뷰어는 도면 자체의 레이어 가시성으로 렌더 — 앱 레이어 필터는 미연결(PART B 예정)
@@ -44,6 +44,25 @@ const panelResizeLimits = {
   centerMin: 420,
 };
 
+// 인식된 소방 심볼 클래스 → 사용자가 지정할 설비 종류(HITL 명명). 값은 엔진 facility 키.
+const FACILITY_LABELS: Record<string, string> = {
+  detector_smoke: "연기감지기",
+  detector_heat: "열감지기(차동/정온)",
+  sprinkler: "스프링클러",
+  hydrant: "옥내소화전",
+  extinguisher: "소화기",
+  evacuation: "피난구",
+  ignore: "설비 아님(무시)",
+};
+
+type SymbolClass = {
+  classId: string; layer: string; count: number;
+  guess: string | null; needsHitl: boolean; isDetector: boolean;
+  source: string; reason: string; thumbnail: string;
+};
+type Recognition = { classes: SymbolClass[]; legendTypes: string[]; facilityOptions: string[];
+  detectorContext?: boolean; scopeHint?: string } | null;
+
 export function App() {
   const viewportFrame = useViewportFrame();
   const [toast, setToast] = useState("대기 중 · 도면을 업로드해주세요");
@@ -56,6 +75,7 @@ export function App() {
   const [dialog, setDialog] = useState<DialogType>(null);
   const workspaceRef = useRef<HTMLDivElement | null>(null);
   const drawingCardRef = useRef<HTMLDivElement | null>(null);
+  const cadViewerRef = useRef<CadFileViewerHandle | null>(null);   // AI 방 클릭→뷰어 이동
   const zoomLevelRef = useRef(zoomLevel);
   const analysisRequestIdRef = useRef(0);
 
@@ -72,6 +92,7 @@ export function App() {
     violations?: Array<{
       ruleId?: string; status?: string; severity?: string; description?: string;
     }>;
+    judgmentSource?: string;
   }>({ drawingInfo: null, roomJudgments: [], violations: [] });
   const [analysisPendingMessage, setAnalysisPendingMessage] = useState<string | null>(null);
   const [viewerDrawingInfo, setViewerDrawingInfo] = useState<DrawingInfo | null>(null);
@@ -82,10 +103,32 @@ export function App() {
   const analysisWarnings = analysis.drawingInfo?.analysisWarnings ?? [];
   const statusDrawingInfo = analysisError || analysisPendingMessage ? null : effectiveDrawingInfo;
   const displayedStatus = analysisPendingMessage ?? (analysisError ? `추출 실패: ${analysisError}` : analysisRecovered ? `복구 분석 완료: ${uploadedFile?.name ?? analysis.drawingInfo?.fileName ?? "도면"}` : toast);
+  const [showReport, setShowReport] = useState(false);   // 뷰 토글: 기본=분석·판정, 보고서 탭 클릭 시만 보고서
   const shouldShowReport = Boolean(uploadedFile && !analysisPendingMessage && (analysis.drawingInfo || effectiveDrawingInfo));
 
+  // 소방 심볼 인식(HITL 명명): 업로드 시 /api/recognize 매니페스트, labels=사용자 지정 종류
+  const [recognition, setRecognition] = useState<Recognition>(null);
+  const [labels, setLabels] = useState<Record<string, string>>({});
+  // AI 방찾기(기하): 방 레이어 없는 실무 도면용. rooms=[{name,area_m2,center,status}], loading 상태
+  const [aiResult, setAiResult] = useState<{
+    rooms?: Array<{ name?: string; area_m2?: number; center?: number[]; status?: string; bridged?: boolean }>;
+    violations?: Array<{ ruleId?: string; status?: string; description?: string; roomName?: string; center?: number[] }>;
+    note?: string; available?: boolean; loading?: boolean;
+  } | null>(null);
+  // HITL 방 확인: SAM 신뢰도·raycast 교차검사 둘 다 자동신뢰 불가로 측정 확증(2026-07-06) →
+  // 자동 게이트 없음. 사용자가 방별로 확인/제외, 확인된 방만 판정에 반영(미확인=검토 필요).
+  const [roomDecisions, setRoomDecisions] = useState<Record<string, "confirmed" | "excluded">>({});
+  // needs_boundary(벽 안 닫힌) 방: 사람이 면적을 직접 입력해 해소. 안전정책상 어떤 방도 자동 최종 아님.
+  const [manualAreas, setManualAreas] = useState<Record<string, string>>({});
+  // 경계 미확정 방의 설치 감지기 개수(사람 입력). 면적+개수 → 백엔드가 필요개수 대비 위반/적합 판정.
+  const [manualCounts, setManualCounts] = useState<Record<string, string>>({});
+  // 요청 시퀀스 가드: 연속 업로드/파라미터 변경 시 이전 in-flight 응답이 최신 상태를 덮어쓰지 않게.
+  const analyzeSeqRef = useRef(0);
+  const recognizeSeqRef = useRef(0);
+  const aiSeqRef = useRef(0);   // AI 방찾기 응답 레이스 가드(느린 요청이 새 파일 상태 덮어쓰기 방지)
+
   // 업로드 파일 + 구조/용도를 FormData로 전송 → 백엔드가 사실 + 방별요구 + (깨끗규격이면) 실 pass/fail 반환
-  const runAnalysis = useCallback((file?: File, structureVal?: string, occupancyVal?: string, mountVal?: string) => {
+  const runAnalysis = useCallback((file?: File, structureVal?: string, occupancyVal?: string, mountVal?: string, labelsArg?: Record<string, string>) => {
     const requestId = analysisRequestIdRef.current + 1;
     analysisRequestIdRef.current = requestId;
     const controller = new AbortController();
@@ -104,6 +147,9 @@ export function App() {
       if (mountVal) {
         form.append("mount", mountVal);
       }
+      if (labelsArg && Object.keys(labelsArg).length > 0) {
+        form.append("labels", JSON.stringify(labelsArg));   // HITL 인식 M 경로
+      }
       options.body = form;
     }
     fetch("/api/analyze", options)
@@ -121,6 +167,7 @@ export function App() {
           drawingInfo: d.drawingInfo ?? null,
           roomJudgments: d.roomJudgments ?? [],
           violations: d.violations ?? [],
+          judgmentSource: d.judgmentSource,
         });
         setAnalysisPendingMessage(null);
         if (file) {
@@ -146,6 +193,42 @@ export function App() {
       })
       .finally(() => clearTimeout(timer));
   }, []);
+
+  // 업로드 도면의 소방 심볼 인식(HITL 매니페스트). 자동추정을 labels 초기값으로 프리필.
+  const runRecognize = useCallback((file: File) => {
+    const seq = ++recognizeSeqRef.current;   // 최신 인식 요청만 반영(연속 업로드 레이스 방지)
+    const form = new FormData();
+    form.append("file", file);
+    fetch("/api/recognize", { method: "POST", body: form })
+      .then((res) => res.json())
+      .then((d) => {
+        if (seq !== recognizeSeqRef.current) return;   // 더 최신 인식이 진행됨 → 폐기
+        if (!Array.isArray(d.classes)) {
+          setRecognition(null);
+          return;
+        }
+        setRecognition({ classes: d.classes, legendTypes: d.legendTypes ?? [], facilityOptions: d.facilityOptions ?? [],
+          detectorContext: d.detectorContext, scopeHint: d.scopeHint });
+        const init: Record<string, string> = {};
+        for (const c of d.classes as SymbolClass[]) {
+          if (c.guess) init[c.classId] = c.guess;    // 레이어/블록명 자동추정 프리필
+        }
+        setLabels(init);
+      })
+      .catch(() => { if (seq === recognizeSeqRef.current) setRecognition(null); });   // 실패는 조용히
+  }, []);
+
+  const handleLabelChange = (classId: string, facility: string) => {
+    setLabels((prev) => {
+      const next = { ...prev };
+      if (facility) {
+        next[classId] = facility;
+      } else {
+        delete next[classId];
+      }
+      return next;
+    });
+  };
   useEffect(() => {
     runAnalysis();
   }, [runAnalysis]);
@@ -168,15 +251,103 @@ export function App() {
     setViewerDrawingInfo(null);
     setZoomLevel((current) => Math.max(current, uploadedDrawingInitialZoom));
     setPanOffset({ x: 0, y: 0 });
-    setToast(`${file.name} 분석 중… (도면 정보 추출)`);
+    setRecognition(null);
+    setLabels({});
+    setAiResult(null);
+    setShowReport(false);   // 업로드 시 분석·판정 뷰로 시작(보고서는 사용자가 탭 선택 시만)
+    setAnalysis({ drawingInfo: null, roomJudgments: [], violations: [] });   // 이전 파일 결과 잔류 방지
+    setToast(`${file.name} 분석 중… (도면 정보 + 방·심볼 추출)`);
     runAnalysis(file, structure, occupancy, mount);
+    runRecognize(file);        // 소방 심볼 인식 매니페스트(HITL 명명용)
+    runAiRooms(file);          // 기하 방추출 자동 실행(심볼처럼 바로 — flood-fill 대체)
   };
+
+  // 사용자가 지정한 종류(labels)로 인식 M 기반 실판정
+  const handleJudgeWithLabels = () => {
+    if (uploadedFile) {
+      setToast("지정한 소방 심볼 종류로 판정 중…");
+      runAnalysis(uploadedFile, structure, occupancy, mount, labels);
+    }
+  };
+
+  // AI 방찾기(기하): 방 레이어 없는 실무 도면에서 벽으로 방 경계·면적 추출 + (라벨 있으면)감지기 판정.
+  // fileArg=업로드 직후 자동실행용(state 반영 전 stale 방지). seq(aiSeqRef)만으로 레이스 가드.
+  const runAiRooms = (fileArg?: File, judge = false, sOv?: string, oOv?: string, mOv?: string) => {
+    const file = fileArg ?? uploadedFile;
+    if (!file) {
+      return;
+    }
+    const s = sOv ?? structure, o = oOv ?? occupancy, m = mOv ?? mount;   // 조건 override(selector 변경 시 fresh 값)
+    const seq = ++aiSeqRef.current;   // 더 최신 요청/새 업로드면 이 결과 폐기(seq-only 가드)
+    setAiResult({ loading: true });
+    if (!judge) { setRoomDecisions({}); setManualAreas({}); setManualCounts({}); }   // 판정 재실행은 확인/제외·수동입력 유지
+    setToast(judge ? "라벨한 심볼로 불법/합법 판정 중…" : "벽으로 방을 추출 중… (기하)");
+    const form = new FormData();
+    form.append("file", file);
+    if (s) form.append("structure", s);
+    if (o) form.append("occupancy", o);
+    if (m) form.append("mount", m);
+    if (Object.keys(labels).length > 0) {
+      form.append("labels", JSON.stringify(labels));   // 라벨한 연기/열 감지기로 배치 판정(불법/합법)
+    }
+    // 경계 미확정 방에 사람이 입력한 (면적, 설치 개수) → 백엔드가 필요개수 대비 위반/적합 판정.
+    // center로 매칭(백엔드가 재추출해도 안정). 판정 시에만 전송.
+    if (judge) {
+      const cur = aiResult?.violations ?? [];
+      const manual = cur.flatMap((v, i) => {
+        if (v.ruleId !== "FV-DET-need_boundary" || !Array.isArray(v.center)) return [];
+        const k = `${v.roomName || "room"}#${i}`;
+        const a = parseFloat(manualAreas[k]);
+        if (!(isFinite(a) && a > 0)) return [];
+        const cRaw = manualCounts[k];
+        const c = cRaw !== undefined && cRaw !== "" ? parseInt(cRaw, 10) : null;
+        return [{ center: v.center, area: a, placed: Number.isFinite(c as number) ? c : null }];
+      });
+      if (manual.length > 0) form.append("manual", JSON.stringify(manual));
+    }
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 120000);
+    fetch("/api/rooms_ai", { method: "POST", body: form, signal: controller.signal })
+      .then((res) => res.json())
+      .then((d) => {
+        if (seq !== aiSeqRef.current) return;   // 더 최신 요청 진행 중 → 폐기(레이스 방지)
+        setAiResult({ rooms: d.aiRooms ?? [], violations: d.violations ?? [],
+                      note: d.note, available: d.available, loading: false });
+        setToast(d.available === false ? "기하 방추출 미설치 환경입니다"
+                 : `방 ${(d.aiRooms ?? []).length}개 추출${judge ? " · 판정 완료" : ""}`);
+      })
+      .catch((err) => {
+        if (seq !== aiSeqRef.current) return;
+        setAiResult({ rooms: [], violations: [], loading: false });
+        setToast(err?.name === "AbortError" ? "시간 초과(1분)" : "방 추출 실패");
+      })
+      .finally(() => clearTimeout(timer));
+  };
+
+  // AI 방 판정 클릭 → 뷰어를 그 방으로 이동(월드좌표 center → zoom/pan 계산).
+  const focusRoom = (center?: number[]) => {
+    if (!center || center.length < 2 || !cadViewerRef.current) {
+      return;
+    }
+    const target = cadViewerRef.current.focusOnWorld(center[0], center[1], 260);
+    if (target) {
+      setZoomLevel(target.zoomLevel);
+      setPanOffset(target.panOffset);
+      setToast("선택한 방으로 이동");
+    }
+  };
+
+  // 구조/용도/층고 변경 → 재판정. HITL 라벨이 있으면 유지(인식 M 판정을 자동으로 되돌리지 않음).
+  const labelsOrUndef = Object.keys(labels).length > 0 ? labels : undefined;
+  // 조건 변경 시 AI 방은 지우지 않고 **새 조건으로 재추출·재판정**(확인/제외 유지). 방 자체는 조건 무관이나
+  // 판정(감지면적)은 조건 의존 → fresh 값으로 다시 돈다. runAiRooms가 seq로 in-flight 정리.
 
   // 건물 구조 변경 → 재판정(구조는 열감지기 기준면적에 영향 = 안전 임계 입력)
   const handleStructureChange = (value: string) => {
     setStructure(value);
     if (uploadedFile) {
-      runAnalysis(uploadedFile, value, occupancy, mount);
+      runAnalysis(uploadedFile, value, occupancy, mount, labelsOrUndef);
+      runAiRooms(uploadedFile, true, value, occupancy, mount);
     }
   };
 
@@ -184,7 +355,8 @@ export function App() {
   const handleOccupancyChange = (value: string) => {
     setOccupancy(value);
     if (uploadedFile) {
-      runAnalysis(uploadedFile, structure, value, mount);
+      runAnalysis(uploadedFile, structure, value, mount, labelsOrUndef);
+      runAiRooms(uploadedFile, true, structure, value, mount);
     }
   };
 
@@ -192,7 +364,8 @@ export function App() {
   const handleMountChange = (value: string) => {
     setMount(value);
     if (uploadedFile) {
-      runAnalysis(uploadedFile, structure, occupancy, value);
+      runAnalysis(uploadedFile, structure, occupancy, value, labelsOrUndef);
+      runAiRooms(uploadedFile, true, structure, occupancy, value);
     }
   };
 
@@ -448,6 +621,7 @@ export function App() {
           >
             {uploadedFile ? (
               <CadFileViewer
+                ref={cadViewerRef}
                 file={uploadedFile}
                 visibleLayerIds={NO_VISIBLE_LAYERS}
                 opacity={100}
@@ -486,7 +660,24 @@ export function App() {
         />
 
         <aside className="right-panel">
-          {!shouldShowReport ? (
+          {uploadedFile ? (
+            <div className="view-tabs">
+              <button onClick={() => setShowReport(false)}
+                style={{ cursor: "pointer",
+                  border: `1px solid ${!showReport ? "rgba(130,160,210,0.6)" : "rgba(120,130,150,0.3)"}`,
+                  background: !showReport ? "rgba(90,120,180,0.3)" : "transparent", color: !showReport ? "#dce7f8" : "#9aa6ba" }}>
+                🔍 분석 · 판정
+              </button>
+              <button onClick={() => setShowReport(true)} disabled={!shouldShowReport}
+                style={{ cursor: shouldShowReport ? "pointer" : "not-allowed",
+                  border: `1px solid ${showReport ? "rgba(130,160,210,0.6)" : "rgba(120,130,150,0.3)"}`,
+                  background: showReport ? "rgba(90,120,180,0.3)" : "transparent", color: showReport ? "#dce7f8" : "#9aa6ba", opacity: shouldShowReport ? 1 : 0.5 }}>
+                📄 보고서
+              </button>
+            </div>
+          ) : null}
+          <div className="right-panel-body">
+          {!showReport ? (
             <section className="analysis-panel fit-panel">
               <div className="list-header">
                 <h3>법규 판정 (NFTC)</h3>
@@ -569,64 +760,287 @@ export function App() {
                   도면을 업로드하면 이 도면의 방·소방 설비를 추출합니다.
                 </p>
               )}
-              {analysis.drawingInfo && !analysis.drawingInfo.error ? (
-                <div className="room-judgment-block">
-                  <div className="room-controls">
-                    <span>방별 판정</span>
-                    <select
-                      className="compact-select"
-                      value={structure}
-                      onChange={(event) => handleStructureChange(event.target.value)}
-                    >
-                      <option value="">건물구조 미상</option>
-                      <option value="fireproof">내화구조</option>
-                      <option value="other">기타구조</option>
-                    </select>
-                    <select
-                      className="compact-select"
-                      value={occupancy}
-                      onChange={(event) => handleOccupancyChange(event.target.value)}
-                    >
-                      <option value="">용도 미상</option>
-                      <option value="공동주택">공동주택</option>
-                      <option value="숙박시설">숙박시설</option>
-                      <option value="의료시설">의료시설</option>
-                      <option value="노유자시설">노유자시설</option>
-                      <option value="교육연구시설">교육연구시설</option>
-                      <option value="업무시설">업무시설</option>
-                    </select>
-                    <select
-                      className="compact-select"
-                      value={mount}
-                      onChange={(event) => handleMountChange(event.target.value)}
-                    >
-                      <option value="">층고 미상</option>
-                      <option value="lt4">천장 4m 미만</option>
-                      <option value="ge4">천장 4m 이상</option>
-                    </select>
-                  </div>
-                  {(analysis.roomJudgments ?? []).length === 0 ? (
-                    <p className="analysis-empty">추출된 방 판정 없음(벽 레이어 인식 한계 가능).</p>
-                  ) : (
-                    <div className="room-judgment-list">
-                      {(analysis.roomJudgments ?? []).map((j, i) => (
-                        <div key={`${j.room}-${i}`} className={`room-judgment-card ${j.status === "determined" ? "determined" : "review"}`}>
-                          <b>{j.room || "—"}</b>{j.area_m2 ? ` · ${j.area_m2}㎡` : ""}
-                          {j.status === "determined" ? <span> · 요구</span> : null}
-                          {j.status === "needs_review" ? <span> · 확인 필요</span> : null}
-                          <div>{j.detail || j.reason}</div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ) : null}
-              <p className="analysis-note">
-                방 면적은 flood-fill로 추출(신뢰 방만). 실 pass/fail 판정엔 <b>구조·층고</b>가 필요(감지면적 기준을 가름) — 미상이면 판정 보류(안전). 배치 확정은 감지기 인식 연결 후.
-              </p>
             </section>
           ) : null}
-          {shouldShowReport ? (
+          {uploadedFile && !showReport ? (
+            <section className="analysis-panel">
+            {analysisError ? (
+              <div style={{ marginBottom: 14, padding: "10px 12px", borderRadius: 8,
+                background: "rgba(210,150,60,0.12)", border: "1px solid rgba(210,150,60,0.34)" }}>
+                <div style={{ fontSize: 12.5, fontWeight: 600, marginBottom: 6, color: "#e8b871" }}>
+                  ⚠️ 심볼 인식 · 방 추출 · 불법/합법 판정을 쓸 수 없습니다
+                </div>
+                <div style={{ fontSize: 11, lineHeight: 1.65, opacity: 0.9 }}>
+                  {(uploadedFile?.name.split(".").pop()?.toUpperCase() === "DWG") ? (
+                    <>이 도면은 <b>DWG</b>라 브라우저 뷰어는 그리지만, FireVal 엔진(심볼·방·판정)은 <b>DXF</b>가 필요합니다.
+                    이 서버엔 DWG→DXF 변환 도구가 없어 정밀 분석을 못 합니다.<br />
+                    → CAD에서 <b>DXF로 저장(다른 이름으로 저장 → DXF)</b> 후 다시 업로드하면 모든 기능이 동작합니다.</>
+                  ) : (
+                    <>정밀 분석을 못 했습니다: {analysisError}<br />
+                    → DXF 파일이 손상되지 않았는지 확인하거나 다시 내보내 업로드해 주세요.</>
+                  )}
+                </div>
+                <div style={{ fontSize: 10.5, opacity: 0.62, marginTop: 7, lineHeight: 1.5 }}>
+                  위 <b>법규 판정(NFTC)</b> 카드의 값은 브라우저 렌더러가 읽은 <b>레이어·요소 수 참고 정보</b>이며, 실제 법규 판정이 아닙니다.
+                </div>
+              </div>
+            ) : null}
+            {recognition && recognition.classes.length > 0 ? (
+              <div style={{ marginBottom: 14 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "4px 0 6px" }}>
+                  <span style={{ fontSize: 12.5, fontWeight: 600 }}>소방 심볼 인식</span>
+                  <span style={{ fontSize: 11, opacity: 0.6 }}>{recognition.classes.length}종{recognition.detectorContext === false ? "" : " · 종류 지정 시 실판정"}</span>
+                </div>
+                {recognition.scopeHint ? (
+                  <div style={{ fontSize: 10.5, opacity: 0.72, margin: "0 0 6px" }}>도면 설비: {recognition.scopeHint}</div>
+                ) : null}
+                {recognition.detectorContext === false ? (
+                  <div style={{ fontSize: 11, lineHeight: 1.5, margin: "0 0 8px", padding: "7px 9px", borderRadius: 6,
+                    background: "rgba(90,150,210,0.12)", color: "#9fc0e5", border: "1px solid rgba(90,150,210,0.28)" }}>
+                    ℹ️ 이 도면은 <b>감지기(자동화재탐지) 도면이 아닙니다</b> — 감지면적 판정 해당 없음. 아래 심볼은 참고용이라 종류 지정 없이 넘어가도 됩니다.
+                  </div>
+                ) : null}
+                {recognition.legendTypes.length > 0 ? (
+                  <div style={{ fontSize: 11, opacity: 0.72, marginBottom: 6 }}>범례 종류(힌트): {recognition.legendTypes.slice(0, 6).join(", ")}</div>
+                ) : null}
+                <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 300, overflowY: "auto", overflowX: "hidden" }}>
+                  {recognition.classes.map((c) => (
+                    <div key={c.classId} style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 7px", borderRadius: 6,
+                      background: c.needsHitl ? "rgba(210,160,60,0.10)" : "rgba(90,192,138,0.08)",
+                      border: `1px solid ${c.needsHitl ? "rgba(210,160,60,0.3)" : "rgba(90,192,138,0.22)"}` }}>
+                      <span aria-hidden style={{ width: 40, height: 40, flexShrink: 0, color: "#cbd5e8",
+                        background: "rgba(18,24,38,0.5)", borderRadius: 4, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}
+                        dangerouslySetInnerHTML={{ __html: c.thumbnail }} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 11.5, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                          <b>×{c.count}</b> <span style={{ opacity: 0.55 }}>{c.layer}</span>
+                          {c.needsHitl ? null : <span style={{ fontSize: 9.5, opacity: 0.55 }} title={c.reason}> · 자동</span>}
+                        </div>
+                        <select value={labels[c.classId] ?? ""} onChange={(e) => handleLabelChange(c.classId, e.target.value)}
+                          style={{ fontSize: 11, padding: "2px 5px", marginTop: 3, width: "100%", borderRadius: 5,
+                            background: "rgba(120,140,170,0.15)", color: "inherit", border: "1px solid rgba(120,140,170,0.35)" }}>
+                          <option value="">{c.isDetector ? "감지기 종별 지정…" : "종류 지정…"}</option>
+                          {recognition.facilityOptions.map((f) => (
+                            <option key={f} value={f}>{FACILITY_LABELS[f] ?? f}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <button onClick={handleJudgeWithLabels} style={{ marginTop: 8, width: "100%", fontSize: 12, padding: "7px", borderRadius: 6, cursor: "pointer",
+                  background: "rgba(90,120,180,0.25)", color: "#cdddf5", border: "1px solid rgba(120,150,200,0.4)" }}>
+                  이 종류로 실판정 →
+                </button>
+                <p style={{ fontSize: 10.5, opacity: 0.55, marginTop: 6, lineHeight: 1.5 }}>
+                  감지기 <b>연기/열 종별</b>은 도면 기하로 자동 구분이 안 돼(안전) 직접 지정합니다. 클래스당 1번 = 같은 심볼 전체에 적용.
+                </p>
+              </div>
+            ) : null}
+            {analysis.drawingInfo && !analysis.drawingInfo.error ? (
+              <div style={{ marginBottom: 12 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "4px 0 8px" }}>
+                  <span style={{ fontSize: 12.5, fontWeight: 600 }}>판정 조건</span>
+                  <select
+                    value={structure}
+                    onChange={(event) => handleStructureChange(event.target.value)}
+                    style={{ fontSize: 11.5, padding: "2px 6px", borderRadius: 6, background: "rgba(120,140,170,0.15)", color: "inherit", border: "1px solid rgba(120,140,170,0.35)" }}
+                  >
+                    <option value="">건물구조 미상</option>
+                    <option value="fireproof">내화구조</option>
+                    <option value="other">기타구조</option>
+                  </select>
+                  <select
+                    value={occupancy}
+                    onChange={(event) => handleOccupancyChange(event.target.value)}
+                    style={{ fontSize: 11.5, padding: "2px 6px", borderRadius: 6, background: "rgba(120,140,170,0.15)", color: "inherit", border: "1px solid rgba(120,140,170,0.35)" }}
+                  >
+                    <option value="">용도 미상</option>
+                    <option value="공동주택">공동주택</option>
+                    <option value="숙박시설">숙박시설</option>
+                    <option value="의료시설">의료시설</option>
+                    <option value="노유자시설">노유자시설</option>
+                    <option value="교육연구시설">교육연구시설</option>
+                    <option value="업무시설">업무시설</option>
+                  </select>
+                  <select
+                    value={mount}
+                    onChange={(event) => handleMountChange(event.target.value)}
+                    style={{ fontSize: 11.5, padding: "2px 6px", borderRadius: 6, background: "rgba(120,140,170,0.15)", color: "inherit", border: "1px solid rgba(120,140,170,0.35)" }}
+                  >
+                    <option value="">층고 미상</option>
+                    <option value="lt4">천장 4m 미만</option>
+                    <option value="ge4">천장 4m 이상</option>
+                  </select>
+                </div>
+                {aiResult?.loading ? (
+                  <p style={{ fontSize: 11.5, opacity: 0.65 }}>벽으로 방을 추출 중…(기하)</p>
+                ) : (
+                  <p style={{ fontSize: 11, opacity: 0.6, lineHeight: 1.55 }}>
+                    업로드 시 벽으로 방을 자동 추출합니다(아래). 조건을 정하고 심볼 종류를 라벨한 뒤 <b>불법/합법 판정</b>을 누르세요.
+                  </p>
+                )}
+              </div>
+            ) : null}
+            {aiResult && !aiResult.loading && (aiResult.rooms ?? []).length > 0 ? (
+              (() => {
+                const viols = aiResult.violations ?? [];
+                const rooms = aiResult.rooms ?? [];
+                // 면적은 이름이 아니라 center(고유 위치)로 매칭 — 동명 방 오염 방지(6축 [10]).
+                const areaByCenter: Record<string, number | undefined> = {};
+                rooms.forEach((r) => { if (Array.isArray(r.center)) areaByCenter[String(r.center)] = r.area_m2; });
+                const areaOf = (v: { center?: number[] }) => (Array.isArray(v.center) ? areaByCenter[String(v.center)] : undefined);
+                const keyOf = (v: { roomName?: string }, i: number) => `${v.roomName || "room"}#${i}`;   // 인덱스 포함 → 동명 방 충돌 방지
+                const isNB = (v: { ruleId?: string }) => v.ruleId === "FV-DET-need_boundary";   // 벽 안 닫힘 = 경계 확인 필요
+                const validArea = (k: string) => { const n = parseFloat(manualAreas[k]); return isFinite(n) && n > 0; };
+                const setDecision = (k: string, val: "confirmed" | "excluded") =>
+                  setRoomDecisions((prev) => {
+                    const next = { ...prev };
+                    if (prev[k] === val) delete next[k]; else next[k] = val;   // 같은 버튼 재클릭 = 취소
+                    return next;
+                  });
+                const setArea = (k: string, val: string) => setManualAreas((prev) => ({ ...prev, [k]: val }));
+                const setCount = (k: string, val: string) => setManualCounts((prev) => ({ ...prev, [k]: val }));
+                // 확정 = 확인된 기하 방 + 면적 입력한 경계방(수동면적으로 판정까지 연결). 나머지=대기.
+                let resolved = 0, excluded = 0, pending = 0;
+                viols.forEach((v, i) => {
+                  const k = keyOf(v, i);
+                  if (roomDecisions[k] === "excluded") { excluded++; return; }
+                  const nbResolved = isNB(v) && validArea(k);   // 수동 면적 입력한 경계방 = 확인됨
+                  if ((!isNB(v) && roomDecisions[k] === "confirmed") || nbResolved) resolved++; else pending++;
+                });
+                const nViol = viols.filter((v, i) => {
+                  if (v.status !== "violation") return false;
+                  const k = keyOf(v, i);
+                  return isNB(v) ? validArea(k) : roomDecisions[k] === "confirmed";   // 경계방은 수동면적 입력 시 위반 집계
+                }).length;
+                const judged = viols.some((v) => v.status === "violation" || v.status === "compliant");   // 실제 pass/fail 존재?(라벨 판정)
+                const btn = (active: boolean, on: string, off: string) => ({
+                  fontSize: 10.5, padding: "2px 9px", borderRadius: 5, cursor: "pointer",
+                  border: `1px solid ${active ? on : "rgba(150,150,160,0.4)"}`,
+                  background: active ? off : "transparent", color: active ? on : "#9aa6ba", fontWeight: active ? 600 : 400,
+                });
+                return (
+              <div style={{ marginBottom: 12 }}>
+                <div style={{ fontSize: 12.5, fontWeight: 600, margin: "4px 0 4px", color: "#cbb8f0" }}>
+                  🤖 AI 방 추출 {rooms.length}개
+                </div>
+                <div style={{ fontSize: 10.5, lineHeight: 1.5, margin: "0 0 7px", padding: "6px 9px", borderRadius: 6,
+                  background: "rgba(210,160,60,0.10)", color: "#d9b060", border: "1px solid rgba(210,160,60,0.25)" }}>
+                  ⚠ <b>모든 방은 사람 확인 후 최종</b> — 자동 최종판정 없음. 기하 면적도 오차 가능(확인 대상). 경계 미확정 방은 <b>면적 + 설치 감지기 개수</b>를 직접 입력 후 ‘판정하기’를 누르면 위반/적합이 나옵니다.
+                </div>
+                <button onClick={() => runAiRooms(undefined, true)} disabled={aiResult?.loading}
+                  style={{ width: "100%", fontSize: 12.5, fontWeight: 700, padding: "9px", borderRadius: 8, margin: "0 0 5px",
+                    cursor: aiResult?.loading ? "wait" : "pointer",
+                    background: "linear-gradient(90deg, rgba(90,120,180,0.38), rgba(120,90,200,0.34))",
+                    color: "#dce7f8", border: "1px solid rgba(130,160,210,0.5)" }}>
+                  {aiResult?.loading ? "판정 중…" : "🔍 불법 / 합법 판정하기"}
+                </button>
+                <p style={{ fontSize: 10, opacity: 0.55, margin: "0 0 7px", lineHeight: 1.5 }}>
+                  {Object.keys(labels).length > 0
+                    ? "라벨한 심볼 + 조건(구조·용도·층고)으로 방별 위반/적합을 산정합니다."
+                    : "위 심볼 패널에서 종류를 라벨하면 위반/적합 판정, 없으면 요구 개수만 산정됩니다."}
+                </p>
+                <div style={{ fontSize: 11, margin: "0 0 6px", display: "flex", gap: 10 }}>
+                  <span style={{ color: "#8d8" }}>확정 {resolved}</span>
+                  <span style={{ color: "#d9b060" }}>대기 {pending}</span>
+                  <span style={{ color: "#c88" }}>제외 {excluded}</span>
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 4, maxHeight: 320, overflowY: "auto", overflowX: "hidden" }}>
+                  {viols.map((v, i) => {
+                    const k = keyOf(v, i);
+                    const nb = isNB(v);
+                    const dec = roomDecisions[k];
+                    const excludedR = dec === "excluded";
+                    const confirmed = !nb && dec === "confirmed";
+                    const areaOk = nb && validArea(k);
+                    const resolvedR = confirmed;    // NB는 백엔드 재판정 없어 '해소'로 안 봄(6축 [2/6])
+                    const area = areaOf(v);          // center 기반 매칭(동명 방 오염 방지, 6축 [10])
+                    const clickable = Array.isArray(v.center) && v.center.length >= 2;
+                    const tone = v.status === "violation" ? { fg: "#e88", label: "위반" }
+                      : v.status === "compliant" ? { fg: "#8d8", label: "적합" }
+                      : { fg: "#d9b060", label: "확인필요" };
+                    const barColor = excludedR ? "#666" : nb ? "#d2a03c" : resolvedR ? "#5ac08a" : "#6c7688";
+                    return (
+                      <div key={`ai-${i}`}
+                        style={{ fontSize: 11.5, lineHeight: 1.4, padding: "6px 8px", borderRadius: 6,
+                          background: excludedR ? "rgba(120,120,130,0.07)" : nb ? "rgba(210,160,60,0.09)" : "rgba(90,192,138,0.07)",
+                          borderLeft: `3px solid ${barColor}`, opacity: excludedR ? 0.5 : resolvedR ? 1 : 0.82 }}>
+                        <div onClick={clickable ? () => focusRoom(v.center) : undefined}
+                          title={clickable ? "클릭 → 도면에서 이 방으로 이동" : undefined}
+                          style={{ cursor: clickable ? "pointer" : "default", textDecoration: excludedR ? "line-through" : "none" }}>
+                          <b style={{ color: nb ? "#d9b060" : "#8fce9f" }}>
+                            {nb ? "⚠ 경계 확인 필요" : `🟢 기하 면적${area ? ` ${area}㎡` : ""}`}
+                          </b>
+                          <span style={{ opacity: 0.6, marginLeft: 5 }}>{v.roomName}</span>
+                          {clickable ? <span style={{ opacity: 0.5, marginLeft: 4 }}>↗</span> : null}
+                        </div>
+                        {!nb ? (
+                          <div style={{ marginTop: 3 }}>
+                            {confirmed ? <b style={{ color: tone.fg }}>{tone.label}</b> : <span style={{ color: "#9aa6ba" }}>확인 전 — 판정 보류</span>}
+                            <span style={{ opacity: 0.7 }}> · {v.description}</span>
+                          </div>
+                        ) : (
+                          <div style={{ marginTop: 3 }}>
+                            <span style={{ color: v.status === "violation" ? "#e88" : v.status === "compliant" ? "#8d8" : "#d9b060", opacity: 0.92 }}>
+                              {v.description}
+                            </span>
+                            {areaOk && v.status !== "violation" && v.status !== "compliant" ? (
+                              <span style={{ opacity: 0.55, marginLeft: 4 }}>· ‘불법/합법 판정하기’ 다시 눌러 반영</span>
+                            ) : null}
+                          </div>
+                        )}
+                        <div style={{ display: "flex", gap: 6, marginTop: 5, alignItems: "center", flexWrap: "wrap" }}>
+                          {!nb ? (
+                            <button onClick={() => setDecision(k, "confirmed")} style={btn(confirmed, "#8d8", "rgba(90,192,138,0.25)")}>
+                              {confirmed ? "✓ 면적 확인됨" : "면적 확인"}
+                            </button>
+                          ) : (
+                            <span style={{ display: "flex", alignItems: "center", gap: 3, flexWrap: "wrap" }}>
+                              <input type="number" min="0" value={manualAreas[k] ?? ""} onChange={(e) => setArea(k, e.target.value)}
+                                placeholder="면적" style={{ width: 46, fontSize: 10.5, padding: "2px 5px", borderRadius: 4,
+                                  border: `1px solid ${areaOk ? "#5ac08a" : "rgba(150,150,160,0.4)"}`,
+                                  background: "rgba(255,255,255,0.06)", color: "#cde" }} />
+                              <span style={{ fontSize: 10.5, color: areaOk ? "#8d8" : "#9aa6ba" }}>㎡</span>
+                              <input type="number" min="0" value={manualCounts[k] ?? ""} onChange={(e) => setCount(k, e.target.value)}
+                                placeholder="개수" style={{ width: 46, fontSize: 10.5, padding: "2px 5px", borderRadius: 4,
+                                  border: "1px solid rgba(150,150,160,0.4)",
+                                  background: "rgba(255,255,255,0.06)", color: "#cde" }} />
+                              <span style={{ fontSize: 10.5, opacity: 0.7 }}>개 감지기</span>
+                            </span>
+                          )}
+                          <button onClick={() => setDecision(k, "excluded")} style={btn(excludedR, "#e0a0a0", "rgba(200,110,110,0.22)")}>
+                            {excludedR ? "✕ 제외됨" : "제외"}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                {resolved > 0 ? (
+                  <div style={{ fontSize: 11, marginTop: 7, padding: "6px 9px", borderRadius: 6,
+                    background: "rgba(90,192,138,0.10)", color: "#9ecdb0" }}>
+                    면적확인 <b>{resolved}</b>개{judged ? <> · 위반 <b>{nViol}</b></> : <span style={{ opacity: 0.7 }}> · pass/fail은 감지기 종류 지정 후</span>}{pending > 0 ? <span style={{ opacity: 0.7 }}> · 대기 {pending}개</span> : null}
+                  </div>
+                ) : (
+                  <div style={{ fontSize: 11, marginTop: 7, padding: "6px 9px", borderRadius: 6,
+                    background: "rgba(210,160,60,0.10)", color: "#d9b060" }}>
+                    아직 확정된 방이 없습니다 — 기하 방은 <b>면적 확인</b>, 경계 미확정 방은 <b>면적 입력</b>. 확인 전엔 판정을 신뢰하지 않습니다(안전).
+                  </div>
+                )}
+                <p style={{ fontSize: 10.5, opacity: 0.55, marginTop: 6, lineHeight: 1.5 }}>{aiResult.note}</p>
+              </div>
+                );
+              })()
+            ) : aiResult && !aiResult.loading && aiResult.available === false ? (
+              <p style={{ fontSize: 11.5, opacity: 0.6, marginBottom: 12 }}>이 서버는 기하 방추출(shapely) 미설치 — 방 레이어 있는 도면만 실판정 가능.</p>
+            ) : null}
+            <p style={{ fontSize: 11.5, margin: 0, lineHeight: 1.6, padding: "10px 12px", borderRadius: 8, background: "rgba(90,120,180,0.12)", color: "#9fb4d8" }}>
+              방 면적은 <b>기하 추출</b>(벽 닫힌 면, 안전마진). 벽 안 닫힌 방은 경계 확인 필요. 실 pass/fail엔 <b>구조·층고</b>도 필요(미상이면 보류). 어떤 방도 사람 확인 후 최종.
+            </p>
+            </section>
+          ) : null}
+          {showReport ? (
             <ReportPanel
               fileName={uploadedFile?.name ?? "선택된 도면 없음"}
               drawingInfo={visibleDrawingInfo}
@@ -634,6 +1048,7 @@ export function App() {
               analysisRecovered={analysisRecovered}
             />
           ) : null}
+          </div>
         </aside>
       </div>
 
