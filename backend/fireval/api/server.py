@@ -35,14 +35,189 @@ def _cors(resp):
     return resp
 
 
+def _resolve_tool(env_name, binary_name):
+    configured = os.environ.get(env_name)
+    if configured:
+        return configured if os.path.exists(configured) else None
+    return shutil.which(binary_name)
+
+
+def _resolve_dwg2dxf():
+    return _resolve_tool("DWG2DXF", "dwg2dxf")
+
+
+def _resolve_dwgread():
+    return _resolve_tool("DWGREAD", "dwgread")
+
+
+_FIRE_LAYER_KO = ("소방", "감지", "스프링클러", "발신기", "수신기", "경보", "소화", "피난")
+_FIRE_LAYER_EN = (
+    "FIRE", "FP-", "FP_", "SP_HEAD", "SP_LINE", "SPRINKLER", "SMOKE", "DETECT",
+    "SO-", "SO_", "HYDRANT",
+)
+
+
+def _is_fire_name(name):
+    text = str(name or "")
+    upper = text.upper()
+    return any(k in text for k in _FIRE_LAYER_KO) or any(k in upper for k in _FIRE_LAYER_EN)
+
+
 @app.get("/api/health")
 def health():
-    return jsonify({"status": "ok", "engine": "FireVal+FireOpt", "rules": len(RULE_CATALOG)})
+    dwg2dxf_path = _resolve_dwg2dxf()
+    dwgread_path = _resolve_dwgread()
+    return jsonify({
+        "status": "ok",
+        "engine": "FireVal+FireOpt",
+        "rules": len(RULE_CATALOG),
+        "dwg2dxfAvailable": bool(dwg2dxf_path),
+        "dwg2dxfPath": dwg2dxf_path,
+        "dwgreadAvailable": bool(dwgread_path),
+        "dwgreadPath": dwgread_path,
+    })
 
 
-# DWG→DXF 변환기: 환경변수 > PATH > 개발 머신 기본경로(배포 시 DWG2DXF env 또는 PATH로 지정).
-_DWG2DXF = (os.environ.get("DWG2DXF") or shutil.which("dwg2dxf")
-            or "/A.I_DATA/jbnu/miniconda3/envs/dwgtools/bin/dwg2dxf")
+def _handle_key(value):
+    if isinstance(value, (list, tuple)) and value:
+        return str(value[-1])
+    if value is None:
+        return ""
+    return str(value)
+
+
+def _run_command(args, timeout=60):
+    import subprocess
+
+    try:
+        return subprocess.run(args, capture_output=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return None
+
+
+def _command_error(result, default_message):
+    if result is None:
+        return "시간 초과"
+    raw = (result.stderr or b"")[-4000:]
+    text = raw.decode("utf-8", errors="replace").strip()
+    return text or default_message
+
+
+def _dxf_facts(doc, name, *, analysis_status="ok", analysis_source="dwg2dxf", warnings=None):
+    from collections import Counter
+
+    msp = doc.modelspace()
+    lc = Counter((getattr(e.dxf, "layer", "") or "") for e in msp)
+    fire_layers = sorted((ln for ln in lc if _is_fire_name(ln)), key=lambda ln: -lc[ln])[:15]
+    from ..ingest.room_extract_raster import is_room_name
+
+    rooms = []
+    for e in msp:
+        if e.dxftype() in ("TEXT", "MTEXT"):
+            try:
+                t = (e.plain_text() if e.dxftype() == "MTEXT" else e.dxf.text).strip()
+            except Exception:
+                continue
+            if is_room_name(t):
+                rooms.append(t)
+    return {
+        "fileName": name,
+        "layerCount": len(doc.layers),
+        "entityCount": len(msp),
+        "fireLayers": list(fire_layers),
+        "roomNames": list(dict.fromkeys(rooms))[:20],
+        "analysisStatus": analysis_status,
+        "analysisSource": analysis_source,
+        "analysisWarnings": list(warnings or []),
+    }
+
+
+def _json_facts(json_path, name, warnings):
+    import json
+    from collections import Counter
+
+    from ..ingest.room_extract_raster import is_room_name
+
+    with open(json_path, "r", encoding="utf-8", errors="replace") as f:
+        data = json.load(f)
+
+    objects = data.get("OBJECTS") or []
+    layer_names_by_handle = {}
+    layers = []
+    block_names_by_handle = {}
+    for obj in objects:
+        if obj.get("object") == "LAYER":
+            layer_name = str(obj.get("name") or "")
+            if layer_name:
+                layers.append(layer_name)
+                layer_names_by_handle[_handle_key(obj.get("handle"))] = layer_name
+        if obj.get("entity") == "BLOCK":
+            block_name = str(obj.get("name") or "")
+            if block_name:
+                block_names_by_handle[_handle_key(obj.get("handle"))] = block_name
+
+    entity_count = 0
+    layer_counts = Counter()
+    fire_layer_counts = Counter()
+    rooms = []
+    for obj in objects:
+        entity_type = obj.get("entity")
+        if not entity_type:
+            continue
+        if entity_type not in ("BLOCK", "ENDBLK", "SEQEND", "VERTEX_2D", "VERTEX_PFACE", "VERTEX_PFACE_FACE"):
+            entity_count += 1
+        layer_name = layer_names_by_handle.get(_handle_key(obj.get("layer")), "")
+        if layer_name:
+            layer_counts[layer_name] += 1
+        block_name = block_names_by_handle.get(_handle_key(obj.get("block_header")), "")
+        if layer_name and (_is_fire_name(layer_name) or _is_fire_name(block_name)):
+            fire_layer_counts[layer_name] += 1
+        if entity_type in ("TEXT", "MTEXT"):
+            text = str(obj.get("text_value") or obj.get("text") or "").strip()
+            if is_room_name(text):
+                rooms.append(text)
+
+    fire_layers = sorted(fire_layer_counts, key=lambda ln: -fire_layer_counts[ln])[:15]
+    if not fire_layers:
+        fire_layers = sorted((ln for ln in layer_counts if _is_fire_name(ln)), key=lambda ln: -layer_counts[ln])[:15]
+
+    return {
+        "fileName": name,
+        "layerCount": len(layers),
+        "entityCount": entity_count,
+        "fireLayers": list(fire_layers),
+        "roomNames": list(dict.fromkeys(rooms))[:20],
+        "layerNames": layers[:30],
+        "analysisStatus": "recovered",
+        "analysisSource": "dwgread-json",
+        "analysisWarnings": list(warnings),
+    }
+
+
+def _parse_dxf_file(dxf_path, name, structure=None, occupancy="", mount_height=3.0,
+                    *, analysis_status="ok", analysis_source="dwg2dxf", warnings=None):
+    import ezdxf
+
+    doc = ezdxf.readfile(dxf_path)
+    facts = _dxf_facts(
+        doc,
+        name,
+        analysis_status=analysis_status,
+        analysis_source=analysis_source,
+        warnings=warnings,
+    )
+    judgments = []
+    try:
+        from ..ingest.room_extract_raster import guess_wall_layers, rooms_from_dxf
+        from ..engine.detector_type import judge_rooms
+
+        walls = guess_wall_layers(doc)
+        extracted = rooms_from_dxf(doc, walls) if walls else []
+        judgments = judge_rooms(extracted, occupancy=occupancy, structure=structure,
+                                mount_height=mount_height or 3.0)
+    except Exception as e:
+        judgments = [{"room": "", "status": "needs_review", "reason": f"방 판정 생략: {e}"}]
+    return facts, judgments
 
 # SAM 방찾기(선택적 AI). torch/transformers가 있는 파이썬(오프라인이면 모델 캐시 필요).
 # 없으면 AI 방찾기 미제공 → 기존 폴백. 이식성 위해 하드의존 아님.
@@ -199,50 +374,87 @@ def _parse_drawing(file_storage, structure=None, occupancy="", mount_height=3.0)
     occupancy(용도)는 judge_rooms로 전달 — 2.4.2.5 취침류 방의 연기의무 확정에 필요.
     """
     import tempfile
-    import subprocess
-    from collections import Counter
     name = file_storage.filename or "drawing"
-    # 파일→DXF 변환은 _to_dxf 재사용(temp 누수·DWG 비타임아웃 예외 안전 처리 일원화).
-    dxf_path, cleanup, err = _to_dxf(file_storage)
-    if err or dxf_path is None:
-        return {"fileName": name, "error": (err or {}).get("error", "파일 처리 실패")}, [], None, cleanup
-    try:
-        import ezdxf
-        doc = ezdxf.readfile(dxf_path)
-        msp = doc.modelspace()
-        lc = Counter(e.dxf.layer for e in msp)
-        # 소방 레이어 = 명확한 소방 키워드만. 짧고 모호한 'SP'/'PIPE'/'전기'는 비소방 레이어에
-        # 부분일치해 오표기하므로 제외(사실 왜곡 방지).
-        _fire_ko = ("소방", "감지", "스프링클러", "발신기", "수신기", "경보", "소화", "피난")
-        _fire_en = ("FIRE", "FP-", "FP_", "SP_HEAD", "SP_LINE", "SPRINKLER", "SMOKE", "DETECT")
+    ext = os.path.splitext(name)[1].lower()
+    tmp = tempfile.NamedTemporaryFile(suffix=ext or ".dxf", delete=False)
+    tmp.write(file_storage.read())
+    tmp.close()
+    dxf_path = tmp.name
+    cleanup = [tmp.name]
+    if ext == ".dwg":
+        dwg2dxf = _resolve_dwg2dxf()
+        if not dwg2dxf:
+            return {
+                "fileName": name,
+                "error": "서버에 DWG 변환 도구(dwg2dxf)가 없습니다.",
+                "errorCode": "dwg2dxf_missing",
+            }, [], None, cleanup
+        dxf_path = tmp.name + ".dxf"
+        cleanup.append(dxf_path)
+        r = _run_command([dwg2dxf, "-y", "-o", dxf_path, tmp.name])
+        if r is None:
+            return {"fileName": name, "error": "DWG 변환 시간 초과", "errorCode": "dwg2dxf_timeout"}, [], None, cleanup
+        if r.returncode != 0 or not os.path.exists(dxf_path):
+            return {"fileName": name, "error": "DWG→DXF 변환 실패", "errorCode": "dwg2dxf_failed"}, [], None, cleanup
 
-        def _is_fire(ln):
-            return any(k in ln for k in _fire_ko) or any(k in ln.upper() for k in _fire_en)
-        fire_layers = sorted((ln for ln in lc if _is_fire(ln)), key=lambda ln: -lc[ln])[:15]
-        from ..ingest.room_extract_raster import is_room_name, guess_wall_layers, rooms_from_dxf
-        from ..engine.detector_type import judge_rooms
-        rooms = []
-        for e in msp:
-            if e.dxftype() in ("TEXT", "MTEXT"):
-                try:
-                    t = (e.plain_text() if e.dxftype() == "MTEXT" else e.dxf.text).strip()
-                except Exception:
-                    continue
-                if is_room_name(t):        # 가구/집기/도면주기 배제(수납장·진열장·강의대 등)
-                    rooms.append(t)
-        facts = {"fileName": name, "layerCount": len(doc.layers), "entityCount": len(msp),
-                 "fireLayers": list(fire_layers), "roomNames": list(dict.fromkeys(rooms))[:20]}
-        judgments = []
-        try:
-            walls = guess_wall_layers(doc)
-            extracted = rooms_from_dxf(doc, walls) if walls else []
-            judgments = judge_rooms(extracted, occupancy=occupancy, structure=structure,
-                                    mount_height=mount_height or 3.0)
-        except Exception as e:
-            judgments = [{"room": "", "status": "needs_review", "reason": f"방 판정 생략: {e}"}]
+    try:
+        facts, judgments = _parse_dxf_file(dxf_path, name, structure, occupancy, mount_height)
         return facts, judgments, dxf_path, cleanup
     except Exception as e:
-        return {"fileName": name, "error": f"DXF 파싱 실패: {e}"}, [], None, cleanup
+        parse_error = f"DXF 파싱 실패: {e}"
+        if ext != ".dwg":
+            return {"fileName": name, "error": parse_error, "errorCode": "dxf_parse_failed",
+                    "analysisStatus": "failed"}, [], None, cleanup
+
+        warnings = [
+            f"기본 DWG→DXF 변환 결과를 ezdxf가 읽지 못했습니다: {e}",
+            "복구 분석 결과는 레이어·텍스트 중심의 부분 분석입니다.",
+        ]
+        minimal_dxf_path = tmp.name + ".minimal.dxf"
+        cleanup.append(minimal_dxf_path)
+        minimal_ready = False
+        minimal_result = _run_command([dwg2dxf, "-y", "-m", "--as", "r2010", "-o", minimal_dxf_path, tmp.name])
+        if minimal_result is not None and minimal_result.returncode == 0 and os.path.exists(minimal_dxf_path):
+            try:
+                minimal_facts, minimal_judgments = _parse_dxf_file(
+                    minimal_dxf_path,
+                    name,
+                    structure,
+                    occupancy,
+                    mount_height,
+                    analysis_status="recovered",
+                    analysis_source="dwg2dxf-minimal",
+                    warnings=warnings,
+                )
+                minimal_ready = True
+            except Exception as minimal_error:
+                warnings.append(f"minimal DXF 복구 파싱 실패: {minimal_error}")
+        elif minimal_result is None:
+            warnings.append("minimal DXF 복구 변환 시간 초과")
+        else:
+            warnings.append(f"minimal DXF 복구 변환 실패: {_command_error(minimal_result, '변환 실패')}")
+
+        dwgread = _resolve_dwgread()
+        if dwgread:
+            json_path = tmp.name + ".json"
+            cleanup.append(json_path)
+            json_result = _run_command([dwgread, "-O", "JSON", "-o", json_path, tmp.name], timeout=90)
+            if json_result is not None and json_result.returncode == 0 and os.path.exists(json_path):
+                try:
+                    return _json_facts(json_path, name, warnings), [], (minimal_dxf_path if minimal_ready else None), cleanup
+                except Exception as json_error:
+                    warnings.append(f"JSON 복구 분석 실패: {json_error}")
+            elif json_result is None:
+                warnings.append("JSON 복구 분석 시간 초과")
+            else:
+                warnings.append(f"JSON 복구 분석 실패: {_command_error(json_result, '분석 실패')}")
+        else:
+            warnings.append("dwgread가 없어 JSON 복구 분석을 건너뜀")
+
+        if minimal_ready:
+            return minimal_facts, minimal_judgments, minimal_dxf_path, cleanup
+        return {"fileName": name, "error": parse_error, "errorCode": "dxf_parse_failed",
+                "analysisStatus": "failed", "analysisWarnings": warnings}, [], None, cleanup
 
 
 def _shape_violations(viols, struct_known, height_known):
